@@ -17,10 +17,8 @@ using namespace std;
 // ws2_32.lib 를 링크한다.
 #pragma comment(lib, "Ws2_32.lib")
 
-
 static const unsigned short SERVER_PORT = 27015;
 static const int NUM_WORKER_THREADS = 10;
-
 
 class Client {
 public:
@@ -43,7 +41,6 @@ public:
     // TODO: 여기를 채운다.
 };
 
-
 // 소켓으로부터 Client 객체 포인터를 얻어내기 위한 map
 // 소켓을 key 로 Client 객체 포인터를 value 로 집어넣는다. (shared_ptr 을 사용한다.)
 // 나중에 key 인 소켓으로 찾으면 연결된 Client 객체 포인터가 나온다.
@@ -56,7 +53,6 @@ mutex activeClientsMutex;
 queue<shared_ptr<Client> > jobQueue;
 mutex jobQueueMutex;
 condition_variable jobQueueFilledCv;
-
 
 SOCKET createPassiveSocket() {
     // TCP socket 을 만든다.
@@ -90,7 +86,6 @@ SOCKET createPassiveSocket() {
 
     return passiveSock;
 }
-
 
 bool processClient(shared_ptr<Client> client) {
     SOCKET activeSock = client->sock;
@@ -171,7 +166,6 @@ bool processClient(shared_ptr<Client> client) {
     return true;
 }
 
-
 void workerThreadProc(int workerId) {
     cout << "Worker thread is starting. WorkerId: " << workerId << endl;
 
@@ -224,7 +218,6 @@ void workerThreadProc(int workerId) {
 
     cout << "Worker thread is quitting. Worker id: " << workerId << endl;
 }
-
 
 int main()
 {

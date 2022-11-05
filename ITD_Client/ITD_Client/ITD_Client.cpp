@@ -1,5 +1,6 @@
 #include <chrono>
 #include <iostream>
+#include <string>
 #include <thread>
 
 #include <WinSock2.h>
@@ -8,7 +9,39 @@
 // ws2_32.lib 를 링크한다.
 #pragma comment(lib, "Ws2_32.lib")
 
-static unsigned short SERVER_PORT = 27015;
+const char* SERVER_ADDRESS = "127.0.0.1";
+static unsigned short SERVER_PORT = 27015; 
+
+using namespace std;
+
+static string GetValidInputText()
+{
+    string input;
+    cin >> input;
+
+    string text = input;
+
+    if (input == "move")
+    {
+        int x, y;
+        cin >> x >> y;
+
+        text += ' ' + to_string(x) + ' ' + to_string(y);
+    }
+    else if (input == "chat")
+    {
+        string name, msg;
+        cin >> name >> msg;
+
+        text += ' ' + name + ' ' + msg;
+    }
+    else if (input != "attack" && input != "monsters" && input != "users" && input != "bot")
+    {
+        return "";
+    }
+
+    return text;
+}
 
 int main()
 {
@@ -18,7 +51,7 @@ int main()
     WSADATA wsaData;
     r = WSAStartup(MAKEWORD(2, 2), &wsaData);
     if (r != NO_ERROR) {
-        std::cerr << "WSAStartup failed with error " << r << std::endl;
+        cerr << "WSAStartup failed with error " << r << endl;
         return 1;
     }
 
@@ -27,7 +60,7 @@ int main()
     // TCP socket 을 만든다.
     SOCKET sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (sock == INVALID_SOCKET) {
-        std::cerr << "socket failed with error " << WSAGetLastError() << std::endl;
+        cerr << "socket failed with error " << WSAGetLastError() << endl;
         return 1;
     }
 
@@ -35,17 +68,22 @@ int main()
     // connect 후에는 별도로 서버 주소를 기재하지 않고 send/recv 를 한다.
     serverAddr.sin_family = AF_INET;
     serverAddr.sin_port = htons(SERVER_PORT);
-    inet_pton(AF_INET, "127.0.0.1", &serverAddr.sin_addr);
+    inet_pton(AF_INET, SERVER_ADDRESS, &serverAddr.sin_addr);
     r = connect(sock, (sockaddr*)&serverAddr, sizeof(serverAddr));
     if (r == SOCKET_ERROR) {
-        std::cerr << "connect failed with error " << WSAGetLastError() << std::endl;
+        cerr << "connect failed with error " << WSAGetLastError() << endl;
         return 1;
     }
 
-    // 1초 간격으로 계속 패킷을 보내본다.
+    // cin으로 입력받은 텍스트를 JSON으로 변경해 서버로 전송한다.
     while (true) {
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-        int dataLen = rand() % 5001 + 10000;  // 10000 ~ 15000 바이트까지를 랜덤하게 보낸다. 
+        string text = GetValidInputText();
+        if (text == "")
+        {
+            cout << "잘못된 명령어, 다시 입력\n";
+            continue;
+        }
+        int dataLen = text.length();
 
         // 길이를 먼저 보낸다.
         // binary 로 4bytes 를 길이로 encoding 한다.
@@ -55,24 +93,22 @@ int main()
         while (offset < 4) {
             r = send(sock, ((char*)&dataLenNetByteOrder) + offset, 4 - offset, 0);
             if (r == SOCKET_ERROR) {
-                std::cerr << "failed to send length: " << WSAGetLastError() << std::endl;
+                cerr << "failed to send length: " << WSAGetLastError() << endl;
                 return 1;
             }
             offset += r;
         }
-        std::cout << "Sent length info: " << dataLen << std::endl;
+        cout << "Sent length info: " << dataLen << endl;
 
         // send 로 데이터를 보낸다. 여기서는 초기화되지 않은 쓰레기 데이터를 보낸다.
-
-        char data[32768];
         offset = 0;
         while (offset < dataLen) {
-            r = send(sock, data + offset, dataLen - offset, 0);
+            r = send(sock, text.c_str() + offset, dataLen - offset, 0);
             if (r == SOCKET_ERROR) {
-                std::cerr << "send failed with error " << WSAGetLastError() << std::endl;
+                cerr << "send failed with error " << WSAGetLastError() << endl;
                 return 1;
             }
-            std::cout << "Sent " << r << " bytes" << std::endl;
+            cout << "Sent " << r << " bytes" << endl;
             offset += r;
         }
     }
@@ -80,7 +116,7 @@ int main()
     // Socket 을 닫는다.
     r = closesocket(sock);
     if (r == SOCKET_ERROR) {
-        std::cerr << "closesocket failed with error " << WSAGetLastError() << std::endl;
+        cerr << "closesocket failed with error " << WSAGetLastError() << endl;
         return 1;
     }
 
