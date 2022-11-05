@@ -14,32 +14,34 @@ static unsigned short SERVER_PORT = 27015;
 
 using namespace std;
 
-static string GetValidInputText()
+// cin으로 입력받은 텍스트를 json 문자열로 변환해 반환하는 함수
+static string GetInputTextJson()
 {
     string input;
     cin >> input;
 
-    string text = input;
+    string text = "{\"text\":\"" + input + "\"";
 
     if (input == "move")
     {
         int x, y;
         cin >> x >> y;
 
-        text += ' ' + to_string(x) + ' ' + to_string(y);
+        text += ",\"first\":" + to_string(x) + ",\"second\":" + to_string(y);
     }
     else if (input == "chat")
     {
         string name, msg;
         cin >> name >> msg;
 
-        text += ' ' + name + ' ' + msg;
+        text += ",\"first\":\"" + name + "\",\"second\":\"" + msg + "\"";
     }
     else if (input != "attack" && input != "monsters" && input != "users" && input != "bot")
     {
         return "";
     }
 
+    text += "}";
     return text;
 }
 
@@ -77,12 +79,13 @@ int main()
 
     // cin으로 입력받은 텍스트를 JSON으로 변경해 서버로 전송한다.
     while (true) {
-        string text = GetValidInputText();
+        string text = GetInputTextJson();
         if (text == "")
         {
-            cout << "잘못된 명령어, 다시 입력\n";
+            cout << "Wrong Text, Try Again\n";
             continue;
         }
+        cout << text << endl;
         int dataLen = text.length();
 
         // 길이를 먼저 보낸다.
@@ -100,7 +103,6 @@ int main()
         }
         cout << "Sent length info: " << dataLen << endl;
 
-        // send 로 데이터를 보낸다. 여기서는 초기화되지 않은 쓰레기 데이터를 보낸다.
         offset = 0;
         while (offset < dataLen) {
             r = send(sock, text.c_str() + offset, dataLen - offset, 0);
