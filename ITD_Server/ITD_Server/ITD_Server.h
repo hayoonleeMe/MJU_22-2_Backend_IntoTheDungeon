@@ -13,6 +13,7 @@
 #include <memory>
 #include <mutex>
 #include <queue>
+#include <random>
 #include <thread>
 #include <WinSock2.h>
 #include <WS2tcpip.h>
@@ -58,6 +59,19 @@ condition_variable jobQueueFilledCv;
 // Dungeon
 static const int NUM_DUNGEON_X = 30;
 static const int NUM_DUNGEON_Y = 30;
+
+namespace Rand
+{
+	// random
+	random_device rd;
+	mt19937 gen(rd());
+	uniform_int_distribution<int> dis(0, NUM_DUNGEON_X - 1);
+
+	int GetRandomLoc() 
+	{
+		return dis(gen);
+	}
+}
 
 namespace Json
 {

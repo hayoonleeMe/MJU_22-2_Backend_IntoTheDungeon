@@ -23,7 +23,7 @@ void RegisterUser(const string& ID)
             if (reply2->type == REDIS_REPLY_ERROR)
                 cout << "Redis Command Error : " << setCmd << '\n';
 
-            //Redis::SetLocation(ID,);
+            Redis::SetLocation(ID, Rand::GetRandomLoc(), Rand::GetRandomLoc());
             Redis::SetHp(ID, Redis::DEFAULT_HP);
             Redis::SetStr(ID, Redis::DEFAULT_STR);
             Redis::SetHpPotion(ID, Redis::DEFAULT_POTION_HP);
