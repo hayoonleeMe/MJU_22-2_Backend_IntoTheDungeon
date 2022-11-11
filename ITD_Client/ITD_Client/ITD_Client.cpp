@@ -49,6 +49,52 @@ static string GetInputTextJson()
     return text;
 }
 
+// 서버로 데이터를 보낸다.
+bool SendData(SOCKET sock, const string& text)
+{
+    int r = 0;
+
+    int dataLen = text.length();
+
+    // 길이를 먼저 보낸다.
+    // binary 로 4bytes 를 길이로 encoding 한다.
+    // 이 때 network byte order 로 변환하기 위해서 htonl 을 호출해야된다.
+    int dataLenNetByteOrder = htonl(dataLen);
+    int offset = 0;
+    while (offset < 4) {
+        r = send(sock, ((char*)&dataLenNetByteOrder) + offset, 4 - offset, 0);
+        if (r == SOCKET_ERROR) {
+            cerr << "failed to send length: " << WSAGetLastError() << endl;
+            return 1;
+        }
+        offset += r;
+    }
+    cout << "Sent length info: " << dataLen << endl;
+
+    offset = 0;
+    while (offset < dataLen) {
+        r = send(sock, text.c_str() + offset, dataLen - offset, 0);
+        if (r == SOCKET_ERROR) {
+            cerr << "send failed with error " << WSAGetLastError() << endl;
+            return 1;
+        }
+        cout << "Sent " << r << " bytes" << endl;
+        offset += r;
+    }
+}
+
+// 로그인한다.
+void Login(SOCKET sock)
+{
+    cout << "로그인 시작\n" << "아이디를 입력하세요.\n";
+    string ID;
+    cin >> ID;
+
+    string text = "{\"text\":\"login\",\"first\":\"" + ID + "\"}";
+
+    SendData(sock, text);
+}
+
 int main()
 {
     int r = 0;
@@ -81,6 +127,9 @@ int main()
         return 1;
     }
 
+    // 첫 로그인
+    Login(sock);
+
     // cin으로 입력받은 텍스트를 JSON으로 변경해 서버로 전송한다.
     while (true) {
         string text = GetInputTextJson();
@@ -90,33 +139,8 @@ int main()
             continue;
         }
         cout << text << endl;
-        int dataLen = text.length();
-
-        // 길이를 먼저 보낸다.
-        // binary 로 4bytes 를 길이로 encoding 한다.
-        // 이 때 network byte order 로 변환하기 위해서 htonl 을 호출해야된다.
-        int dataLenNetByteOrder = htonl(dataLen);
-        int offset = 0;
-        while (offset < 4) {
-            r = send(sock, ((char*)&dataLenNetByteOrder) + offset, 4 - offset, 0);
-            if (r == SOCKET_ERROR) {
-                cerr << "failed to send length: " << WSAGetLastError() << endl;
-                return 1;
-            }
-            offset += r;
-        }
-        cout << "Sent length info: " << dataLen << endl;
-
-        offset = 0;
-        while (offset < dataLen) {
-            r = send(sock, text.c_str() + offset, dataLen - offset, 0);
-            if (r == SOCKET_ERROR) {
-                cerr << "send failed with error " << WSAGetLastError() << endl;
-                return 1;
-            }
-            cout << "Sent " << r << " bytes" << endl;
-            offset += r;
-        }
+        
+        SendData(sock, text);
     }
 
     // Socket 을 닫는다.

@@ -131,7 +131,7 @@ bool processClient(shared_ptr<Client> client)
         Value& text = d[Json::TEXT];
 
         // 첫 로그인
-        if (strcmp(text.GetString(), Json::LOGIN))
+        if (strcmp(text.GetString(), Json::LOGIN) == 0)
         {
             RegisterUser(string(d[Json::PARAM1].GetString()));
         }
@@ -191,7 +191,7 @@ void workerThreadProc() {
 int main()
 {
     // hiredis 연결
-    Redis::redis = redisConnect(SERVER_ADDRESS, SERVER_PORT);
+    Redis::redis = redisConnect(SERVER_ADDRESS, 6379);
     if (Redis::redis == NULL || Redis::redis->err)
     {
         if (Redis::redis)
