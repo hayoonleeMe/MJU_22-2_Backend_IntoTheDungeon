@@ -74,4 +74,77 @@ namespace Redis
 {
 	// hiredis 
 	redisContext* redis;
+
+	static const char* LOC_X = ":location:x";
+	static const char* LOC_Y = ":location:y";
+	static const char* HP = ":hp";
+	static const char* STR = ":str";
+	static const char* POTION_HP = ":potions:hp";
+	static const char* POTION_STR = ":potions:str";
+
+	static const int DEFAULT_HP = 30;
+	static const int DEFAULT_STR = 3;
+	static const int DEFAULT_POTION_HP = 1;
+	static const int DEFAULT_POTION_STR = 1;
+
+	void SetLocation(const string& ID, int x, int y)
+	{
+		string setCmd = "SET USER:" + ID + LOC_X + " " + to_string(x);
+
+		redisReply* reply = (redisReply*)redisCommand(Redis::redis, setCmd.c_str());
+		if (reply->type == REDIS_REPLY_ERROR)
+			cout << "Redis Command Error : " << setCmd << '\n';
+
+		setCmd = "SET USER:" + ID + LOC_Y + " " + to_string(y);
+
+		reply = (redisReply*)redisCommand(Redis::redis, setCmd.c_str());
+		if (reply->type == REDIS_REPLY_ERROR)
+			cout << "Redis Command Error : " << setCmd << '\n';
+
+		freeReplyObject(reply);
+	}
+
+	void SetHp(const string& ID, int hp)
+	{
+		string setCmd = "SET USER:" + ID + HP + " " + to_string(hp);
+
+		redisReply* reply = (redisReply*)redisCommand(Redis::redis, setCmd.c_str());
+		if (reply->type == REDIS_REPLY_ERROR)
+			cout << "Redis Command Error : " << setCmd << '\n';
+
+		freeReplyObject(reply);
+	}
+
+	void SetStr(const string& ID, int str)
+	{
+		string setCmd = "SET USER:" + ID + STR + " " + to_string(str);
+
+		redisReply* reply = (redisReply*)redisCommand(Redis::redis, setCmd.c_str());
+		if (reply->type == REDIS_REPLY_ERROR)
+			cout << "Redis Command Error : " << setCmd << '\n';
+
+		freeReplyObject(reply);
+	}
+
+	void SetHpPotion(const string& ID, int numOfPotion)
+	{
+		string setCmd = "SET USER:" + ID + POTION_HP + " " + to_string(numOfPotion);
+
+		redisReply* reply = (redisReply*)redisCommand(Redis::redis, setCmd.c_str());
+		if (reply->type == REDIS_REPLY_ERROR)
+			cout << "Redis Command Error : " << setCmd << '\n';
+
+		freeReplyObject(reply);
+	}
+
+	void SetStrPotion(const string& ID, int numOfPotion)
+	{
+		string setCmd = "SET USER:" + ID + POTION_STR + " " + to_string(numOfPotion);
+
+		redisReply* reply = (redisReply*)redisCommand(Redis::redis, setCmd.c_str());
+		if (reply->type == REDIS_REPLY_ERROR)
+			cout << "Redis Command Error : " << setCmd << '\n';
+
+		freeReplyObject(reply);
+	}
 }
