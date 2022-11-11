@@ -1,11 +1,33 @@
 #include "ITD_Server.h"
 
-Client::Client(SOCKET sock) : sock(sock), doingRecv(false), lenCompleted(false), packetLen(0), offset(0)
-{}
-
-Client::~Client()
+// 유저를 redis에 등록한다.
+void RegisterUser(const string& ID)
 {
-    cout << "Client destroyed. Socket: " << sock << endl;
+    // 해당 ID로 로그인한 유저가 있는지 체크
+    string exitCmd = "Exists USER:" + ID;
+    redisReply* reply1 = (redisReply*)redisCommand(Redis::redis, exitCmd.c_str());
+    if (reply1->type == REDIS_REPLY_INTEGER)
+    {
+        // 이미 존재할 때
+        if (reply1->integer == 1)
+        {
+            // TODO : 플레이 중인 유저 아이디로 로그인을 하게 되면 동시 접속으로 간주하고 기존의 접속을 강제 종료한다.
+        }
+        // 존재하지 않을 때
+        else
+        {
+            // redis에 등록
+            string setCmd = "SET USER:" + ID + " 1";
+
+            redisReply* reply2 = (redisReply*)redisCommand(Redis::redis, setCmd.c_str());
+            if (reply2->type == REDIS_REPLY_ERROR)
+                cout << "Redis Command Error : " << setCmd << '\n';
+
+            freeReplyObject(reply2);
+        }
+    }
+
+    freeReplyObject(reply1);
 }
 
 SOCKET createPassiveSocket() 
@@ -99,11 +121,25 @@ bool processClient(shared_ptr<Client> client)
         cout << "[" << activeSock << "] Received " << client->packetLen << " bytes" << endl;
 
         // TODO: 클라이언트로부터 받은 텍스트에 따라 로직 수행
-        string json = string(client->packet).substr(0, client->packetLen);
+        const string json = string(client->packet).substr(0, client->packetLen);
         cout << json << endl;
 
         Document d;
         d.Parse(json);
+
+        // 첫 로그인인지 확인
+        Value& text = d[Json::TEXT];
+
+        // 첫 로그인
+        if (strcmp(text.GetString(), Json::LOGIN))
+        {
+            RegisterUser(string(d[Json::PARAM1].GetString()));
+        }
+        // 이미 로그인된 유저
+        else
+        {
+
+        }
 
         // 다음 패킷을 위해 패킷 관련 정보를 초기화한다.
         client->lenCompleted = false;
@@ -155,12 +191,12 @@ void workerThreadProc() {
 int main()
 {
     // hiredis 연결
-    redis = redisConnect(SERVER_ADDRESS, SERVER_PORT);
-    if (redis == NULL || redis->err)
+    Redis::redis = redisConnect(SERVER_ADDRESS, SERVER_PORT);
+    if (Redis::redis == NULL || Redis::redis->err)
     {
-        if (redis)
+        if (Redis::redis)
         {
-            printf("Error: %s\n", redis->errstr);
+            printf("Error: %s\n", Redis::redis->errstr);
         }
         else
         {

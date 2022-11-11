@@ -26,9 +26,13 @@ using namespace rapidjson;
 class Client
 {
 public:
-	Client(SOCKET sock);
+	Client(SOCKET sock) : sock(sock), doingRecv(false), lenCompleted(false), packetLen(0), offset(0)
+	{}
 
-	~Client();
+	~Client()
+	{
+		cout << "Client destroyed. Socket: " << sock << endl;
+	}
 
 public:
 	SOCKET sock;  // 이 클라이언트의 active socket
@@ -55,11 +59,19 @@ condition_variable jobQueueFilledCv;
 static const int NUM_DUNGEON_X = 30;
 static const int NUM_DUNGEON_Y = 30;
 
-// json key
-static const char* CMD = "text";
-static const char* PARAM1 = "first";
-static const char* PARAM2 = "second";
+namespace Json
+{
+	// json key
+	static const char* TEXT = "text";
+	static const char* PARAM1 = "first";
+	static const char* PARAM2 = "second";
 
-// hiredis 
-redisContext* redis;
+	// json value
+	static const char* LOGIN = "login";
+}
 
+namespace Redis
+{
+	// hiredis 
+	redisContext* redis;
+}
