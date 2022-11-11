@@ -1,3 +1,6 @@
+#define RAPIDJSON_HAS_STDSTRING 1
+#include "rapidjson/document.h"
+
 #include <chrono>
 #include <iostream>
 #include <string>
@@ -9,10 +12,11 @@
 // ws2_32.lib 를 링크한다.
 #pragma comment(lib, "Ws2_32.lib")
 
-const char* SERVER_ADDRESS = "127.0.0.1";
+static const char* SERVER_ADDRESS = "127.0.0.1";
 static unsigned short SERVER_PORT = 27015; 
 
 using namespace std;
+using namespace rapidjson;
 
 // cin으로 입력받은 텍스트를 json 문자열로 변환해 반환하는 함수
 static string GetInputTextJson()
