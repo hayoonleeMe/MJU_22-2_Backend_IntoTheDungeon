@@ -35,98 +35,176 @@ bool processClient(shared_ptr<Client> client)
 {
     SOCKET activeSock = client->sock;
 
-    if (client->lenCompleted == false) {
-        // network byte order 로 전성되기 때문에 ntohl() 을 호출한다.
-        int r = recv(activeSock, (char*)&(client->packetLen) + client->offset, 4 - client->offset, 0);
-        if (r == SOCKET_ERROR) {
+    // 패킷을 받는다.
+    if (client->sendTurn == false)
+    {
+        if (client->lenCompleted == false) 
+        {
+            // network byte order 로 전성되기 때문에 ntohl() 을 호출한다.
+            int r = recv(activeSock, (char*)&(client->packetLen) + client->offset, 4 - client->offset, 0);
+            if (r == SOCKET_ERROR) 
+            {
+                cerr << "recv failed with error " << WSAGetLastError() << endl;
+                return false;
+            }
+            else if (r == 0) 
+            {
+                // 메뉴얼을 보면 recv() 는 소켓이 닫힌 경우 0 을 반환함을 알 수 있다.
+                cerr << "Socket closed: " << activeSock << endl;
+                return false;
+            }
+            client->offset += r;
+
+            // 완성 못했다면 다음번에 계속 시도할 것이다.
+            if (client->offset < 4) 
+            {
+                return true;
+            }
+
+            // host byte order 로 변경한다.
+            int dataLen = ntohl(client->packetLen);
+            cout << "[" << activeSock << "] Received length info: " << dataLen << endl;
+            client->packetLen = dataLen;
+
+            // 혹시 우리가 받을 데이터가 64KB보다 큰지 확인한다.
+            if (client->packetLen > sizeof(client->packet)) 
+            {
+                cerr << "[" << activeSock << "] Too big data: " << client->packetLen << endl;
+                return false;
+            }
+
+            // 이제 packetLen 을 완성했다고 기록하고 offset 을 초기화해준다.
+            client->lenCompleted = true;
+            client->offset = 0;
+        }
+
+        // 여기까지 도달했다는 것은 packetLen 을 완성한 경우다. (== lenCompleted 가 true)
+        if (client->lenCompleted == false) 
+        {
+            return true;
+        }
+
+        int r = recv(activeSock, client->packet + client->offset, client->packetLen - client->offset, 0);
+        if (r == SOCKET_ERROR) 
+        {
             cerr << "recv failed with error " << WSAGetLastError() << endl;
             return false;
         }
-        else if (r == 0) {
+        else if (r == 0) 
+        {
             // 메뉴얼을 보면 recv() 는 소켓이 닫힌 경우 0 을 반환함을 알 수 있다.
-            cerr << "Socket closed: " << activeSock << endl;
             return false;
         }
         client->offset += r;
 
-        // 완성 못했다면 다음번에 계속 시도할 것이다.
-        if (client->offset < 4) {
+        if (client->offset == client->packetLen) 
+        {
+            cout << "[" << activeSock << "] Received " << client->packetLen << " bytes" << endl;
+
+
+            // TODO: 클라이언트로부터 받은 텍스트에 따라 로직 수행
+            const string json = string(client->packet).substr(0, client->packetLen);
+
+            Document d;
+            d.Parse(json);
+
+            // 명령어
+            Value& text = d[Json::TEXT];
+
+            // 첫 로그인
+            if (strcmp(text.GetString(), Json::LOGIN) == 0)
+            {
+                {
+                    lock_guard<mutex> lg(Redis::redisMutex);
+
+                    Redis::RegisterUser(string(d[Json::PARAM1].GetString()));
+                }
+
+                if (client->ID == NONE)
+                    client->ID = string(d[Json::PARAM1].GetString());
+            }
+            // 이미 로그인된 유저로부터 명령어 받음
+            else
+            {
+                // TODO : 명령별 로직 수행
+
+                // 보낼 패킷 설정 
+                if (strcmp(text.GetString(), Json::ATTACK) == 0)
+                {
+                    // 클라에게 패킷 보낼 준비
+                    client->sendTurn = true;
+                    client->sendPacket = "attack response";
+                }
+            }
+
+            // 다음 패킷을 위해 패킷 관련 정보를 초기화한다.
+            client->lenCompleted = false;
+            client->offset = 0;
+            if (client->sendTurn)
+                client->packetLen = htonl(client->sendPacket.length());
+            else
+                client->packetLen = 0;
+        }
+    }
+
+    // 받은 패킷에 대한 응답을 보낸다.
+    if (client->sendTurn)
+    {   
+        cout << "Send Start : " << client->ID << '\n';
+
+        if (client->lenCompleted == false) 
+        {
+            int r = send(activeSock, (char*)&(client->packetLen) + client->offset, 4 - client->offset, 0);
+            if (r == SOCKET_ERROR) 
+            {
+                cerr << "send failed with error " << WSAGetLastError() << endl;
+                return false;
+            }
+            client->offset += r;
+
+            // 완성 못했다면 다음번에 계속 시도할 것이다.
+            if (client->offset < 4) 
+            {
+                return true;
+            }
+
+            // 이제 packetLen 을 완성했다고 기록하고 offset 을 초기화해준다.
+            client->lenCompleted = true;
+            client->offset = 0;
+            client->packetLen = ntohl(client->packetLen);
+        }
+
+        // 여기까지 도달했다는 것은 packetLen 을 완성한 경우다. (== lenCompleted 가 true)
+        if (client->lenCompleted == false) 
+        {
             return true;
         }
 
-        // host byte order 로 변경한다.
-        int dataLen = ntohl(client->packetLen);
-        cout << "[" << activeSock << "] Received length info: " << dataLen << endl;
-        client->packetLen = dataLen;
-
-        // 혹시 우리가 받을 데이터가 64KB보다 큰지 확인한다.
-        if (client->packetLen > sizeof(client->packet)) {
-            cerr << "[" << activeSock << "] Too big data: " << client->packetLen << endl;
+        int r = send(activeSock, client->sendPacket.c_str() + client->offset, client->packetLen - client->offset, 0);
+        if (r == SOCKET_ERROR) 
+        {
+            cerr << "send failed with error " << WSAGetLastError() << endl;
             return false;
         }
+        client->offset += r;
 
-        // 이제 packetLen 을 완성했다고 기록하고 offset 을 초기화해준다.
-        client->lenCompleted = true;
-        client->offset = 0;
-    }
-
-    // 여기까지 도달했다는 것은 packetLen 을 완성한 경우다. (== lenCompleted 가 true)
-    if (client->lenCompleted == false) {
-        return true;
-    }
-
-    int r = recv(activeSock, client->packet + client->offset, client->packetLen - client->offset, 0);
-    if (r == SOCKET_ERROR) {
-        cerr << "recv failed with error " << WSAGetLastError() << endl;
-        return false;
-    }
-    else if (r == 0) {
-        // 메뉴얼을 보면 recv() 는 소켓이 닫힌 경우 0 을 반환함을 알 수 있다.
-        return false;
-    }
-    client->offset += r;
-        
-    if (client->offset == client->packetLen) {
-        cout << "[" << activeSock << "] Received " << client->packetLen << " bytes" << endl;
-
-        // TODO: 클라이언트로부터 받은 텍스트에 따라 로직 수행
-        const string json = string(client->packet).substr(0, client->packetLen);
-
-        Document d;
-        d.Parse(json);
-
-        // 명령어
-        Value& text = d[Json::TEXT];
-
-        // 첫 로그인
-        if (strcmp(text.GetString(), Json::LOGIN) == 0)
+        if (client->offset == client->packetLen) 
         {
-            {
-                lock_guard<mutex> lg(Redis::redisMutex);
+            cout << "[" << activeSock << "] Sent " << client->packetLen << " bytes" << endl;
 
-                Redis::RegisterUser(string(d[Json::PARAM1].GetString()));
-            }
-
-            if (client->ID == NONE)
-                client->ID = string(d[Json::PARAM1].GetString());
+            // 다음 패킷을 위해 패킷 관련 정보를 초기화한다.
+            client->sendTurn = false;
+            client->lenCompleted = false;
+            client->offset = 0;
+            client->packetLen = 0;
+            client->sendPacket = "";
         }
-        // 이미 로그인된 유저로부터 명령어 받음
-        else
-        {
-            // TODO : 명령별 로직 수행
-        }
-
-        // 다음 패킷을 위해 패킷 관련 정보를 초기화한다.
-        client->lenCompleted = false;
-        client->offset = 0;
-        client->packetLen = 0;
     }
 
     return true;
 }
 
 void workerThreadProc() {
-
     while (true) {
         shared_ptr<Client> client;
         {
@@ -138,7 +216,6 @@ void workerThreadProc() {
 
             client = jobQueue.front();
             jobQueue.pop();
-
         }
 
         if (client) {
@@ -146,7 +223,6 @@ void workerThreadProc() {
             bool successful = processClient(client);
             if (successful == false) {
                 closesocket(activeSock);
-
                 {
                     lock_guard<mutex> lg(activeClientsMutex);
 
@@ -193,6 +269,8 @@ int main()
     }
 
     while (true) {
+        int sendCount = 0;
+
         fd_set readSet, exceptionSet;
 
         // 위의 socket set 을 초기화한다.
@@ -214,6 +292,9 @@ int main()
                 FD_SET(activeSock, &readSet);
                 FD_SET(activeSock, &exceptionSet);
                 maxSock = max(maxSock, activeSock);
+
+                if (client->sendTurn)
+                    ++sendCount;
             }
         }
 
@@ -230,7 +311,7 @@ int main()
 
         // 아무것도 반환을 안한 경우는 아래를 처리하지 않고 바로 다시 select 를 하게 한다.
         // select 의 반환값은 오류일 때 SOCKET_ERROR, 그 외의 경우 이벤트가 발생한 소켓 갯수이다.
-        if (r == 0) {
+        if (r == 0 && sendCount == 0) {
             continue;
         }
 
@@ -278,7 +359,7 @@ int main()
             }
 
             // 읽기 이벤트가 발생하는 소켓의 경우 recv() 를 처리한다.
-            if (FD_ISSET(activeSock, &readSet)) {
+            if (FD_ISSET(activeSock, &readSet) || client->sendTurn) {
                 // 이제 다시 select 대상이 되지 않도록 client 의 flag 를 켜준다.
                 client->doingRecv.store(true);
 

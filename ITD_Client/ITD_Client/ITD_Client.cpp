@@ -83,6 +83,59 @@ bool SendData(SOCKET sock, const string& text)
     }
 }
 
+bool ReceiveData(SOCKET activeSock)
+{
+    int r = 0;
+
+    // 길이 정보를 받기 위해서 4바이트를 읽는다.
+    // network byte order 로 전성되기 때문에 ntohl() 을 호출한다.
+    std::cout << "Receiving length info" << std::endl;
+    int dataLenNetByteOrder;
+    int offset = 0;
+    while (offset < 4) {
+        r = recv(activeSock, ((char*)&dataLenNetByteOrder) + offset, 4 - offset, 0);
+        if (r == SOCKET_ERROR) {
+            std::cerr << "recv failed with error " << WSAGetLastError() << std::endl;
+            return false;
+        }
+        else if (r == 0) {
+            // 메뉴얼을 보면 recv() 는 소켓이 닫힌 경우 0 을 반환함을 알 수 있다.
+            // 따라서 r == 0 인 경우도 loop 을 탈출하게 해야된다.
+            std::cerr << "socket closed while reading length" << std::endl;
+            return false;
+        }
+        offset += r;
+    }
+    int dataLen = ntohl(dataLenNetByteOrder);
+    std::cout << "Received length info: " << dataLen << std::endl;
+
+    // socket 으로부터 데이터를 받는다.
+    // TCP 는 연결 기반이므로 누가 보냈는지는 accept 시 결정되고 그 뒤로는 send/recv 만 호출한다.
+    std::cout << "Receiving stream" << std::endl;
+    char buf[65536 * 2];
+    offset = 0;
+    while (offset < dataLen) {
+        r = recv(activeSock, buf + offset, dataLen - offset, 0);
+        if (r == SOCKET_ERROR) {
+            std::cerr << "recv failed with error " << WSAGetLastError() << std::endl;
+            return false;
+        }
+        else if (r == 0) {
+            // 메뉴얼을 보면 recv() 는 소켓이 닫힌 경우 0 을 반환함을 알 수 있다.
+            // 따라서 r == 0 인 경우도 loop 을 탈출하게 해야된다.
+            return false;
+        }
+        std::cout << "Received " << r << " bytes" << std::endl;
+        offset += r;
+    }
+
+    string text = string(buf).substr(0, dataLen);
+
+    cout << "Received text : " << text << '\n';
+
+    return true;
+}
+
 // 로그인한다.
 void Login(SOCKET sock)
 {
@@ -141,6 +194,7 @@ int main()
         cout << text << endl;
         
         SendData(sock, text);
+        ReceiveData(sock);
     }
 
     // Socket 을 닫는다.
