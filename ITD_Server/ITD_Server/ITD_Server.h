@@ -89,6 +89,8 @@ namespace Redis
 	// hiredis 
 	redisContext* redis;
 
+	static const int EXIST_ID = 1;
+
 	static const char* EXPIRE_TIME = "15";
 	static const char* LOGINED = "1";
 	static const char* EXPIRED = "0";

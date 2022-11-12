@@ -9,7 +9,7 @@ void RegisterUser(const string& ID)
     if (reply->type == REDIS_REPLY_INTEGER)
     {
         // USER:ID 가 존재할 때
-        if (reply->integer == 1)
+        if (reply->integer == Redis::EXIST_ID)
         {
             // 이미 아이디가 로그인 중일 때
             if (strcmp(Redis::GetUserConnection(ID).c_str(), Redis::LOGINED) == 0)
@@ -148,7 +148,7 @@ bool processClient(shared_ptr<Client> client)
         // 이미 로그인된 유저
         else
         {
-
+            // TODO : 기존 유저 접속 종료
         }
 
         // 다음 패킷을 위해 패킷 관련 정보를 초기화한다.
@@ -202,8 +202,6 @@ void workerThreadProc() {
 
 int main()
 {
-    cout << "stoi(Redis::LOGINED) : " << stoi(Redis::LOGINED) << '\n';
-
     // hiredis 연결
     Redis::redis = redisConnect(SERVER_ADDRESS, 6379);
     if (Redis::redis == NULL || Redis::redis->err)
