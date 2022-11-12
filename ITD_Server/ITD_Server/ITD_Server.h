@@ -24,37 +24,19 @@ using namespace rapidjson;
 // ws2_32.lib 를 링크한다.
 #pragma comment(lib, "Ws2_32.lib")
 
-class Client
-{
-public:
-	Client(SOCKET sock) : sock(sock), doingRecv(false), lenCompleted(false), packetLen(0), offset(0)
-	{}
-
-	~Client()
-	{
-		cout << "Client destroyed. Socket: " << sock << endl;
-	}
-
-public:
-	SOCKET sock;  // 이 클라이언트의 active socket
-
-	atomic<bool> doingRecv;
-
-	bool lenCompleted;
-	int packetLen;
-	char packet[65536];  // 최대 64KB 로 패킷 사이즈 고정
-	int offset;
-};
+// 전방선언
+class Client;
 
 // socket
 static const char* SERVER_ADDRESS = "127.0.0.1";
 static const unsigned short SERVER_PORT = 27015;
 static const int NUM_WORKER_THREADS = 10;
-map<SOCKET, shared_ptr<Client> > activeClients;
+map<SOCKET, shared_ptr<Client>> activeClients;
 mutex activeClientsMutex;
-queue<shared_ptr<Client> > jobQueue;
+queue<shared_ptr<Client>> jobQueue;
 mutex jobQueueMutex;
 condition_variable jobQueueFilledCv;
+static const char* NONE = "";
 
 // Dungeon
 static const int NUM_DUNGEON_X = 30;
@@ -192,11 +174,14 @@ namespace Redis
 
 	void ExpireUser(const string& ID)
 	{
-		string properties[7] = { "", LOC_X, LOC_Y, HP, STR, POTION_HP, POTION_STR};
+		SetUserConnection(ID, EXPIRED);
+
+		const int numOfCmd = 7;
+		string properties[] = { "", LOC_X, LOC_Y, HP, STR, POTION_HP, POTION_STR};
 
 		string expireCmd;
 		redisReply* reply;
-		for (int i = 0; i < 6; ++i)
+		for (int i = 0; i < numOfCmd; ++i)
 		{
 			expireCmd = "EXPIRE USER:" + ID + properties[i] + " " + EXPIRE_TIME;
 
@@ -207,7 +192,36 @@ namespace Redis
 
 		}
 		freeReplyObject(reply);
-
-		SetUserConnection(ID, EXPIRED);
 	}
 }
+
+// 서버로 로그인된 유저 클라이언트
+class Client
+{
+public:
+	Client(SOCKET sock) : sock(sock), doingRecv(false), lenCompleted(false), packetLen(0), offset(0), ID(NONE)
+	{}
+
+	~Client()
+	{
+		// 유저가 접속 종료할 때 Expire
+		if (ID != NONE)
+		{
+			Redis::ExpireUser(ID);
+		}
+
+		cout << "Client destroyed. Socket: " << sock << endl;
+	}
+
+public:
+	SOCKET sock;  // 이 클라이언트의 active socket
+
+	atomic<bool> doingRecv;
+
+	bool lenCompleted;
+	int packetLen;
+	char packet[65536];  // 최대 64KB 로 패킷 사이즈 고정
+	int offset;
+
+	string ID;	// 로그인된 유저의 ID
+};

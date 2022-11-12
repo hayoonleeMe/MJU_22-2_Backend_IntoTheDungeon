@@ -125,30 +125,29 @@ bool processClient(shared_ptr<Client> client)
         return false;
     }
     client->offset += r;
-
-    // 완성한 경우와 partial recv 인 경우를 구분해서 로그를 찍는다.
+        
     if (client->offset == client->packetLen) {
         cout << "[" << activeSock << "] Received " << client->packetLen << " bytes" << endl;
 
         // TODO: 클라이언트로부터 받은 텍스트에 따라 로직 수행
         const string json = string(client->packet).substr(0, client->packetLen);
-        cout << json << endl;
 
         Document d;
         d.Parse(json);
 
-        // 첫 로그인인지 확인
+        // 명령어
         Value& text = d[Json::TEXT];
 
         // 첫 로그인
         if (strcmp(text.GetString(), Json::LOGIN) == 0)
         {
-            RegisterUser(string(d[Json::PARAM1].GetString()));
+            if (client->ID == NONE)
+                client->ID = string(d[Json::PARAM1].GetString());            RegisterUser(client->ID);
         }
-        // 이미 로그인된 유저
+        // 이미 로그인된 유저로부터 명령어 받음
         else
         {
-            // TODO : 기존 유저 접속 종료
+            // TODO : 명령별 로직 수행
         }
 
         // 다음 패킷을 위해 패킷 관련 정보를 초기화한다.
@@ -156,9 +155,6 @@ bool processClient(shared_ptr<Client> client)
         client->offset = 0;
         client->packetLen = 0;
     }
-    /*else {
-        cout << "[" << activeSock << "] Partial recv " << r << "bytes. " << client->offset << "/" << client->packetLen << endl;
-    }*/
 
     return true;
 }
@@ -190,8 +186,6 @@ void workerThreadProc() {
 
                     activeClients.erase(activeSock);
                 }
-
-                // TODO : 클라이언트 로그인 종료 처리
             }
             else {
                 client->doingRecv.store(false);
