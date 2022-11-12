@@ -89,6 +89,10 @@ namespace Redis
 	// hiredis 
 	redisContext* redis;
 
+	static const char* EXPIRE_TIME = "15";
+	static const char* LOGINED = "1";
+	static const char* EXPIRED = "0";
+
 	static const char* LOC_X = ":location:x";
 	static const char* LOC_Y = ":location:y";
 	static const char* HP = ":hp";
@@ -100,6 +104,17 @@ namespace Redis
 	static const int DEFAULT_STR = 3;
 	static const int DEFAULT_POTION_HP = 1;
 	static const int DEFAULT_POTION_STR = 1;
+
+	void SetUserConnection(const string& ID, const char* status)
+	{
+		string setCmd = "SET USER:" + ID + " " + status;
+
+		redisReply* reply = (redisReply*)redisCommand(redis, setCmd.c_str());
+		if (reply->type == REDIS_REPLY_ERROR)
+			cout << "Redis Command Error : " << setCmd << '\n';
+
+		freeReplyObject(reply);
+	}
 
 	void SetLocation(const string& ID, int x, int y)
 	{
@@ -160,5 +175,37 @@ namespace Redis
 			cout << "Redis Command Error : " << setCmd << '\n';
 
 		freeReplyObject(reply);
+	}
+
+	string GetUserConnection(const string& ID)
+	{
+		string getCmd = "GET USER:" + ID;
+
+		redisReply* reply = (redisReply*)redisCommand(redis, getCmd.c_str());
+		if (reply->type == REDIS_REPLY_STRING)
+			return reply->str;
+
+		return 0;
+	}
+
+	void ExpireUser(const string& ID)
+	{
+		string properties[7] = { "", LOC_X, LOC_Y, HP, STR, POTION_HP, POTION_STR};
+
+		string expireCmd;
+		redisReply* reply;
+		for (int i = 0; i < 6; ++i)
+		{
+			expireCmd = "EXPIRE USER:" + ID + properties[i] + " " + EXPIRE_TIME;
+
+			reply = (redisReply*)redisCommand(redis, expireCmd.c_str());
+
+			if (reply->type == REDIS_REPLY_ERROR)
+				cout << "Redis Command Error : " << expireCmd << '\n';
+
+		}
+		freeReplyObject(reply);
+
+		SetUserConnection(ID, EXPIRED);
 	}
 }
