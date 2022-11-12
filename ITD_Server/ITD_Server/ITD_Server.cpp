@@ -101,8 +101,14 @@ bool processClient(shared_ptr<Client> client)
         // 첫 로그인
         if (strcmp(text.GetString(), Json::LOGIN) == 0)
         {
+            {
+                lock_guard<mutex> lg(Redis::redisMutex);
+
+                Redis::RegisterUser(string(d[Json::PARAM1].GetString()));
+            }
+
             if (client->ID == NONE)
-                client->ID = string(d[Json::PARAM1].GetString());            Redis::RegisterUser(client->ID);
+                client->ID = string(d[Json::PARAM1].GetString());
         }
         // 이미 로그인된 유저로부터 명령어 받음
         else
@@ -161,13 +167,10 @@ int main()
     if (Redis::redis == NULL || Redis::redis->err)
     {
         if (Redis::redis)
-        {
             printf("Error: %s\n", Redis::redis->errstr);
-        }
         else
-        {
             printf("Can't allocate redis context\n");
-        }
+        return 1;
     }
 
     int r = 0;
@@ -294,8 +297,8 @@ int main()
         }
 
         // 지울 것이 있었다면 지운다.
-        for (auto& closedSock : toDelete) {
-
+        for (auto& closedSock : toDelete) 
+        {
             // 맵에서 지우고 객체도 지워준다.
             activeClients.erase(closedSock);
         }

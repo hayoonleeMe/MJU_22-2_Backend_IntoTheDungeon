@@ -24,8 +24,26 @@ using namespace rapidjson;
 // ws2_32.lib 를 링크한다.
 #pragma comment(lib, "Ws2_32.lib")
 
-// 전방선언
-class Client;
+// 서버로 로그인된 유저 클라이언트
+class Client
+{
+public:
+	Client(SOCKET sock);
+
+	~Client();
+
+public:
+	SOCKET sock;  // 이 클라이언트의 active socket
+
+	atomic<bool> doingRecv;
+
+	bool lenCompleted;
+	int packetLen;
+	char packet[65536];  // 최대 64KB 로 패킷 사이즈 고정
+	int offset;
+
+	string ID;	// 로그인된 유저의 ID
+};
 
 // socket
 static const char* SERVER_ADDRESS = "127.0.0.1";
@@ -71,9 +89,11 @@ namespace Redis
 	// hiredis 
 	redisContext* redis;
 
+	mutex redisMutex;
+
 	static const int EXIST_ID = 1;
 
-	static const char* EXPIRE_TIME = "15";
+	static const char* EXPIRE_TIME = "30";
 	static const char* LOGINED = "1";
 	static const char* EXPIRED = "0";
 
@@ -169,7 +189,7 @@ namespace Redis
 		if (reply->type == REDIS_REPLY_STRING)
 			return reply->str;
 
-		return 0;
+		return "";
 	}
 
 	void ExpireUser(const string& ID)
@@ -197,8 +217,6 @@ namespace Redis
 	// expire 된 유저의 key들을 다시 되돌림
 	void PersistUser(const string& ID)
 	{
-		SetUserConnection(ID, LOGINED);
-
 		const int numOfCmd = 7;
 		string properties[] = { "", LOC_X, LOC_Y, HP, STR, POTION_HP, POTION_STR };
 
@@ -215,6 +233,29 @@ namespace Redis
 
 		}
 		freeReplyObject(reply);
+
+		SetUserConnection(ID, LOGINED);
+	}
+
+	// ID를 가진 기존의 접속을 모두 종료한다.
+	void TerminateRemainUser(const string& ID)
+	{
+		list<SOCKET> toDelete;
+
+		// 기존의 접속된 클라이언트를 찾는다.
+		for (auto& entry : activeClients)
+		{
+			if (entry.second.get()->ID == ID)
+				toDelete.push_back(entry.first);
+		}
+
+		// 지울 클라이언트를 지운다.
+		{
+			lock_guard<mutex> lg(activeClientsMutex);
+
+			for (auto& sock : toDelete)
+				activeClients.erase(sock);
+		}
 	}
 
 	// 유저를 redis에 등록한다.
@@ -228,11 +269,16 @@ namespace Redis
 			// USER:ID 가 존재할 때
 			if (reply->integer == Redis::EXIST_ID)
 			{
-				// 이미 아이디가 로그인 중일 때
+				// 이미 아이디가 로그인 중일 때 기존의 접속 강제 종료
 				if (strcmp(Redis::GetUserConnection(ID).c_str(), Redis::LOGINED) == 0)
 				{
-					// TODO : 플레이 중인 유저 아이디로 로그인을 하게 되면 동시 접속으로 간주하고 기존의 접속을 강제 종료한다.
 					cout << ID + " 이미 로그인 되어 있음\n";
+					TerminateRemainUser(ID);
+					// 기존 접속들을 강제 종료했으므로 redis의 key들은 expire 된다.
+					// 이를 다시 영구적인 값으로 되돌려 새로 로그인한 클라만이 사용하도록 한다.
+					PersistUser(ID);
+
+					// TODO: 강제 종료한 기존 접속의 클라이언트에게 메시지를 전송하고 종료시켜야 함
 				}
 				// 종료 후 5분이 지나기 전에 재접속
 				else if (strcmp(Redis::GetUserConnection(ID).c_str(), Redis::EXPIRED) == 0)
@@ -259,33 +305,16 @@ namespace Redis
 	}
 }
 
-// 서버로 로그인된 유저 클라이언트
-class Client
+Client::Client(SOCKET sock) : sock(sock), doingRecv(false), lenCompleted(false), packetLen(0), offset(0), ID(NONE)
+{}
+
+Client::~Client()
 {
-public:
-	Client(SOCKET sock) : sock(sock), doingRecv(false), lenCompleted(false), packetLen(0), offset(0), ID(NONE)
-	{}
-
-	~Client()
+	// 유저가 접속 종료할 때 Expire
+	if (ID != NONE)
 	{
-		// 유저가 접속 종료할 때 Expire
-		if (ID != NONE)
-		{
-			Redis::ExpireUser(ID);
-		}
-
-		cout << "Client destroyed. Socket: " << sock << endl;
+		Redis::ExpireUser(ID);
 	}
 
-public:
-	SOCKET sock;  // 이 클라이언트의 active socket
-
-	atomic<bool> doingRecv;
-
-	bool lenCompleted;
-	int packetLen;
-	char packet[65536];  // 최대 64KB 로 패킷 사이즈 고정
-	int offset;
-
-	string ID;	// 로그인된 유저의 ID
-};
+	cout << "Client destroyed. Socket: " << sock << endl;
+}
