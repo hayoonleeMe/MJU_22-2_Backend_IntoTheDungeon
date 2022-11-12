@@ -193,6 +193,70 @@ namespace Redis
 		}
 		freeReplyObject(reply);
 	}
+
+	// expire 된 유저의 key들을 다시 되돌림
+	void PersistUser(const string& ID)
+	{
+		SetUserConnection(ID, LOGINED);
+
+		const int numOfCmd = 7;
+		string properties[] = { "", LOC_X, LOC_Y, HP, STR, POTION_HP, POTION_STR };
+
+		string persistCmd;
+		redisReply* reply;
+		for (int i = 0; i < numOfCmd; ++i)
+		{
+			persistCmd = "PERSIST USER:" + ID + properties[i];
+
+			reply = (redisReply*)redisCommand(redis, persistCmd.c_str());
+
+			if (reply->type == REDIS_REPLY_ERROR)
+				cout << "Redis Command Error : " << persistCmd << '\n';
+
+		}
+		freeReplyObject(reply);
+	}
+
+	// 유저를 redis에 등록한다.
+	void RegisterUser(const string& ID)
+	{
+		// 해당 ID로 로그인한 유저가 있는지 체크
+		string exitCmd = "Exists USER:" + ID;
+		redisReply* reply = (redisReply*)redisCommand(Redis::redis, exitCmd.c_str());
+		if (reply->type == REDIS_REPLY_INTEGER)
+		{
+			// USER:ID 가 존재할 때
+			if (reply->integer == Redis::EXIST_ID)
+			{
+				// 이미 아이디가 로그인 중일 때
+				if (strcmp(Redis::GetUserConnection(ID).c_str(), Redis::LOGINED) == 0)
+				{
+					// TODO : 플레이 중인 유저 아이디로 로그인을 하게 되면 동시 접속으로 간주하고 기존의 접속을 강제 종료한다.
+					cout << ID + " 이미 로그인 되어 있음\n";
+				}
+				// 종료 후 5분이 지나기 전에 재접속
+				else if (strcmp(Redis::GetUserConnection(ID).c_str(), Redis::EXPIRED) == 0)
+				{
+					cout << ID + " 재접속함\n";
+					Redis::PersistUser(ID);
+				}
+			}
+			// USER:ID가 존재하지 않을 때
+			else
+			{
+				cout << "New User : " << ID << '\n';
+				// redis에 등록
+				Redis::SetUserConnection(ID, Redis::LOGINED);
+				Redis::SetLocation(ID, Rand::GetRandomLoc(), Rand::GetRandomLoc());
+				Redis::SetHp(ID, Redis::DEFAULT_HP);
+				Redis::SetStr(ID, Redis::DEFAULT_STR);
+				Redis::SetHpPotion(ID, Redis::DEFAULT_POTION_HP);
+				Redis::SetStrPotion(ID, Redis::DEFAULT_POTION_STR);
+			}
+		}
+
+		freeReplyObject(reply);
+	}
 }
 
 // 서버로 로그인된 유저 클라이언트
