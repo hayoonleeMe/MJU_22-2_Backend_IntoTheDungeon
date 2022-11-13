@@ -121,15 +121,34 @@ bool processClient(shared_ptr<Client> client)
             // 이미 로그인된 유저로부터 명령어 받음
             else
             {
-                // TODO : 명령별 로직 수행
+                // 명령별 로직 수행
+                if (strcmp(text.GetString(), Json::MOVE) == 0)
+                {
+                    client->sendPacket = Logic::ProcessMove(client->ID);
+                }
+                else if (strcmp(text.GetString(), Json::ATTACK) == 0)
+                {
+                    client->sendPacket = Logic::ProcessAttack(client->ID);
+                }
+                else if (strcmp(text.GetString(), Json::MONSTERS) == 0)
+                {
+                    client->sendPacket = Logic::ProcessMonsters(client->ID);
+                }
+                else if (strcmp(text.GetString(), Json::USERS) == 0)
+                {
+                    client->sendPacket = Logic::ProcessUsers(client->ID);
+                }
+                else if (strcmp(text.GetString(), Json::CHAT) == 0)
+                {
+                    client->sendPacket = Logic::ProcessChat(client->ID);
+                }
+                else if (strcmp(text.GetString(), Json::BOT) == 0)
+                {
+                    client->sendPacket = Logic::ProcessBot(client->ID);
+                }
 
                 // 보낼 패킷 설정 
-                if (strcmp(text.GetString(), Json::ATTACK) == 0)
-                {
-                    // 클라에게 패킷 보낼 준비
-                    client->sendTurn = true;
-                    client->sendPacket = "attack response";
-                }
+                client->sendTurn = true;
             }
 
             // 다음 패킷을 위해 패킷 관련 정보를 초기화한다.
@@ -198,6 +217,8 @@ bool processClient(shared_ptr<Client> client)
 
         return true;
     }
+
+    return true;
 }
 
 void workerThreadProc() {

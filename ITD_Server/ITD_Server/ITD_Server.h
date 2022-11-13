@@ -85,13 +85,19 @@ namespace Server
 		}
 	}
 }
-static const char* NONE = "";
 
 // 내부 로직 관련
 namespace Logic
 {
 	static const int NUM_DUNGEON_X = 30;
 	static const int NUM_DUNGEON_Y = 30;
+
+	string ProcessMove(const string& ID);
+	string ProcessAttack(const string& ID);
+	string ProcessMonsters(const string& ID);
+	string ProcessUsers(const string& ID);
+	string ProcessChat(const string& ID);
+	string ProcessBot(const string& ID);
 }
 
 // 난수 관련
@@ -121,7 +127,7 @@ namespace Json
 	static const char* MOVE = "move";
 	static const char* ATTACK = "attack";
 	static const char* MONSTERS = "monsters";
-	static const char* users = "users";
+	static const char* USERS = "users";
 	static const char* CHAT = "chat";
 	static const char* BOT = "bot";
 }
@@ -371,16 +377,46 @@ namespace Redis
 	}
 }
 
-Client::Client(SOCKET sock) : sock(sock), sendTurn(false), doingRecv(false), lenCompleted(false), packetLen(0), offset(0), ID(NONE), sendPacket(NONE)
+Client::Client(SOCKET sock) : sock(sock), sendTurn(false), doingRecv(false), lenCompleted(false), packetLen(0), offset(0), ID(""), sendPacket("")
 {}
 
 Client::~Client()
 {
 	// 유저가 접속 종료할 때 Expire
-	if (ID != NONE)
+	if (ID != "")
 	{
 		Redis::ExpireUser(ID);
 	}
 
 	cout << "Client destroyed. Socket: " << sock << endl;
+}
+
+string Logic::ProcessMove(const string& ID)
+{
+	return "";
+}
+
+string Logic::ProcessAttack(const string& ID)
+{
+	return "";
+}
+
+string Logic::ProcessMonsters(const string& ID)
+{
+	return "";
+}
+
+string Logic::ProcessUsers(const string& ID)
+{
+	return "";
+}
+
+string Logic::ProcessChat(const string& ID)
+{
+	return "";
+}
+
+string Logic::ProcessBot(const string& ID)
+{
+	return "";
 }
