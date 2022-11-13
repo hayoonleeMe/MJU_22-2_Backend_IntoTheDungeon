@@ -18,6 +18,8 @@ static unsigned short SERVER_PORT = 27015;
 using namespace std;
 using namespace rapidjson;
 
+char recvBuf[65536];
+
 // cin으로 입력받은 텍스트를 json 문자열로 변환해 반환하는 함수
 static string GetInputTextJson()
 {
@@ -65,7 +67,7 @@ bool SendData(SOCKET sock, const string& text)
         r = send(sock, ((char*)&dataLenNetByteOrder) + offset, 4 - offset, 0);
         if (r == SOCKET_ERROR) {
             cerr << "failed to send length: " << WSAGetLastError() << endl;
-            return 1;
+            return false;
         }
         offset += r;
     }
@@ -76,11 +78,13 @@ bool SendData(SOCKET sock, const string& text)
         r = send(sock, text.c_str() + offset, dataLen - offset, 0);
         if (r == SOCKET_ERROR) {
             cerr << "send failed with error " << WSAGetLastError() << endl;
-            return 1;
+            return false;
         }
         cout << "Sent " << r << " bytes" << endl;
         offset += r;
     }
+
+    return true;
 }
 
 bool ReceiveData(SOCKET activeSock)
@@ -109,13 +113,19 @@ bool ReceiveData(SOCKET activeSock)
     int dataLen = ntohl(dataLenNetByteOrder);
     std::cout << "Received length info: " << dataLen << std::endl;
 
+    // 혹시 우리가 받을 데이터가 64KB보다 큰지 확인한다.
+    if (dataLen > sizeof(recvBuf))
+    {
+        cerr << "[" << activeSock << "] Too big data: " << dataLen << endl;
+        return false;
+    }
+
     // socket 으로부터 데이터를 받는다.
     // TCP 는 연결 기반이므로 누가 보냈는지는 accept 시 결정되고 그 뒤로는 send/recv 만 호출한다.
     std::cout << "Receiving stream" << std::endl;
-    char buf[65536 * 2];
     offset = 0;
     while (offset < dataLen) {
-        r = recv(activeSock, buf + offset, dataLen - offset, 0);
+        r = recv(activeSock, recvBuf + offset, dataLen - offset, 0);
         if (r == SOCKET_ERROR) {
             std::cerr << "recv failed with error " << WSAGetLastError() << std::endl;
             return false;
@@ -129,7 +139,7 @@ bool ReceiveData(SOCKET activeSock)
         offset += r;
     }
 
-    string text = string(buf).substr(0, dataLen);
+    string text = string(recvBuf).substr(0, dataLen);
 
     cout << "Received text : " << text << '\n';
 
@@ -193,8 +203,15 @@ int main()
         }
         cout << text << endl;
         
-        SendData(sock, text);
-        ReceiveData(sock);
+        if (!SendData(sock, text))
+        {
+            return 1;
+        }
+        
+        if (!ReceiveData(sock))
+        {
+            return 1;
+        }
     }
 
     // Socket 을 닫는다.

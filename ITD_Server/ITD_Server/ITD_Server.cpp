@@ -101,7 +101,6 @@ bool processClient(shared_ptr<Client> client)
         {
             cout << "[" << activeSock << "] Received " << client->packetLen << " bytes" << endl;
 
-
             // TODO: 클라이언트로부터 받은 텍스트에 따라 로직 수행
             const string json = string(client->packet).substr(0, client->packetLen);
 
@@ -378,10 +377,14 @@ int main()
         }
 
         // 지울 것이 있었다면 지운다.
-        for (auto& closedSock : toDelete) 
         {
-            // 맵에서 지우고 객체도 지워준다.
-            activeClients.erase(closedSock);
+            lock_guard<mutex> lg(activeClientsMutex);
+
+            for (auto& closedSock : toDelete)
+            {
+                // 맵에서 지우고 객체도 지워준다.
+                activeClients.erase(closedSock);
+            }
         }
     }
 

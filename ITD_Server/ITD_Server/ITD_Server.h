@@ -69,7 +69,10 @@ void TerminateRemainUser(const string& ID)
 	for (auto& entry : activeClients)
 	{
 		if (entry.second->ID == ID)
+		{
+			closesocket(entry.first);
 			toDelete.push_back(entry.first);
+		}
 	}
 
 	// 지워야 하는 클라이언트들을 지운다.
