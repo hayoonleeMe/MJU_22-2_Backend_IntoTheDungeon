@@ -13,7 +13,7 @@ SOCKET createPassiveSocket()
     struct sockaddr_in serverAddr;
     memset(&serverAddr, 0, sizeof(serverAddr));
     serverAddr.sin_family = AF_INET;
-    serverAddr.sin_port = htons(SERVER_PORT);
+    serverAddr.sin_port = htons(Server::SERVER_PORT);
     serverAddr.sin_addr.s_addr = htonl(INADDR_ANY);
 
     int r = bind(passiveSock, (sockaddr*)&serverAddr, sizeof(serverAddr));
@@ -204,14 +204,14 @@ void workerThreadProc() {
     while (true) {
         shared_ptr<Client> client;
         {
-            unique_lock<mutex> ul(jobQueueMutex);
+            unique_lock<mutex> ul(Server::jobQueueMutex);
 
-            while (jobQueue.empty()) {
-                jobQueueFilledCv.wait(ul);
+            while (Server::jobQueue.empty()) {
+                Server::jobQueueFilledCv.wait(ul);
             }
 
-            client = jobQueue.front();
-            jobQueue.pop();
+            client = Server::jobQueue.front();
+            Server::jobQueue.pop();
         }
 
         if (client) {
@@ -220,9 +220,9 @@ void workerThreadProc() {
             if (successful == false) {
                 closesocket(activeSock);
                 {
-                    lock_guard<mutex> lg(activeClientsMutex);
+                    lock_guard<mutex> lg(Server::activeClientsMutex);
 
-                    activeClients.erase(activeSock);
+                    Server::activeClients.erase(activeSock);
                 }
             }
             else {
@@ -235,7 +235,7 @@ void workerThreadProc() {
 int main()
 {
     // hiredis 연결
-    Redis::redis = redisConnect(SERVER_ADDRESS, 6379);
+    Redis::redis = redisConnect(Server::SERVER_ADDRESS, 6379);
     if (Redis::redis == NULL || Redis::redis->err)
     {
         if (Redis::redis)
@@ -259,7 +259,7 @@ int main()
     SOCKET passiveSock = createPassiveSocket();
 
     list<shared_ptr<thread> > threads;
-    for (int i = 0; i < NUM_WORKER_THREADS; ++i) {
+    for (int i = 0; i < Server::NUM_WORKER_THREADS; ++i) {
         shared_ptr<thread> workerThread(new thread(workerThreadProc));
         threads.push_back(workerThread);
     }
@@ -280,7 +280,7 @@ int main()
         maxSock = max(maxSock, passiveSock);
 
         // 현재 남아있는 active socket 들에 대해서도 모두 set 에 넣어준다.
-        for (auto& entry : activeClients) {
+        for (auto& entry : Server::activeClients) {
             SOCKET activeSock = entry.first;
             shared_ptr<Client> client = entry.second;
 
@@ -326,7 +326,7 @@ int main()
             else {
                 shared_ptr<Client> newClient(new Client(activeSock));
 
-                activeClients.insert(make_pair(activeSock, newClient));
+                Server::activeClients.insert(make_pair(activeSock, newClient));
 
                 char strBuf[1024];
                 inet_ntop(AF_INET, &(clientAddr.sin_addr), strBuf, sizeof(strBuf));
@@ -337,7 +337,7 @@ int main()
 
         // 오류 이벤트가 발생하는 소켓의 클라이언트는 제거한다.
         list<SOCKET> toDelete;
-        for (auto& entry : activeClients) {
+        for (auto& entry : Server::activeClients) {
             SOCKET activeSock = entry.first;
             shared_ptr<Client> client = entry.second;
 
@@ -360,14 +360,14 @@ int main()
                 client->doingRecv.store(true);
 
                 {
-                    lock_guard<mutex> lg(jobQueueMutex);
+                    lock_guard<mutex> lg(Server::jobQueueMutex);
 
-                    bool wasEmpty = jobQueue.empty();
-                    jobQueue.push(client);
+                    bool wasEmpty = Server::jobQueue.empty();
+                    Server::jobQueue.push(client);
 
                     // 무의미하게 CV 를 notify하지 않도록 큐의 길이가 0에서 1이 되는 순간 notify 를 하도록 하자.
                     if (wasEmpty) {
-                        jobQueueFilledCv.notify_one();
+                        Server::jobQueueFilledCv.notify_one();
                     }
                 }
             }
@@ -375,12 +375,12 @@ int main()
 
         // 지울 것이 있었다면 지운다.
         {
-            lock_guard<mutex> lg(activeClientsMutex);
+            lock_guard<mutex> lg(Server::activeClientsMutex);
 
             for (auto& closedSock : toDelete)
             {
                 // 맵에서 지우고 객체도 지워준다.
-                activeClients.erase(closedSock);
+                Server::activeClients.erase(closedSock);
             }
         }
     }

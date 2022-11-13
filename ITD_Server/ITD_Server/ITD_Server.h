@@ -49,51 +49,58 @@ public:
 	string ID;	// 로그인된 유저의 ID
 };
 
-// socket
-static const char* SERVER_ADDRESS = "127.0.0.1";
-static const unsigned short SERVER_PORT = 27015;
-static const int NUM_WORKER_THREADS = 10;
-map<SOCKET, shared_ptr<Client>> activeClients;
-mutex activeClientsMutex;
-queue<shared_ptr<Client>> jobQueue;
-mutex jobQueueMutex;
-condition_variable jobQueueFilledCv;
-static const char* NONE = "";
-
-// ID를 가진 기존의 접속을 모두 종료한다.
-void TerminateRemainUser(const string& ID)
+// 서버 구동 관련
+namespace Server
 {
-	list<SOCKET> toDelete;
+	static const char* SERVER_ADDRESS = "127.0.0.1";
+	static const unsigned short SERVER_PORT = 27015;
+	static const int NUM_WORKER_THREADS = 10;
+	map<SOCKET, shared_ptr<Client>> activeClients;
+	mutex activeClientsMutex;
+	queue<shared_ptr<Client>> jobQueue;
+	mutex jobQueueMutex;
+	condition_variable jobQueueFilledCv;
 
-	// 기존의 접속된 클라이언트를 찾는다.
-	for (auto& entry : activeClients)
+	// ID를 가진 기존의 접속을 모두 종료한다.
+	void TerminateRemainUser(const string& ID)
 	{
-		if (entry.second->ID == ID)
+		list<SOCKET> toDelete;
+
+		// 기존의 접속된 클라이언트를 찾는다.
+		for (auto& entry : Server::activeClients)
 		{
-			closesocket(entry.first);
-			toDelete.push_back(entry.first);
+			if (entry.second->ID == ID)
+			{
+				closesocket(entry.first);
+				toDelete.push_back(entry.first);
+			}
+		}
+
+		// 지워야 하는 클라이언트들을 지운다.
+		{
+			lock_guard<mutex> lg(Server::activeClientsMutex);
+
+			for (auto& sock : toDelete)
+				Server::activeClients.erase(sock);
 		}
 	}
+}
+static const char* NONE = "";
 
-	// 지워야 하는 클라이언트들을 지운다.
-	{
-		lock_guard<mutex> lg(activeClientsMutex);
-
-		for (auto& sock : toDelete)
-			activeClients.erase(sock);
-	}
+// 내부 로직 관련
+namespace Logic
+{
+	static const int NUM_DUNGEON_X = 30;
+	static const int NUM_DUNGEON_Y = 30;
 }
 
-// Dungeon
-static const int NUM_DUNGEON_X = 30;
-static const int NUM_DUNGEON_Y = 30;
-
+// 난수 관련
 namespace Rand
 {
 	// random
 	random_device rd;
 	mt19937 gen(rd());
-	uniform_int_distribution<int> dis(0, NUM_DUNGEON_X - 1);
+	uniform_int_distribution<int> dis(0, Logic::NUM_DUNGEON_X - 1);
 
 	int GetRandomLoc() 
 	{
@@ -101,6 +108,7 @@ namespace Rand
 	}
 }
 
+// json 관련
 namespace Json
 {
 	// json key
@@ -110,9 +118,15 @@ namespace Json
 
 	// json value
 	static const char* LOGIN = "login";
+	static const char* MOVE = "move";
 	static const char* ATTACK = "attack";
+	static const char* MONSTERS = "monsters";
+	static const char* users = "users";
+	static const char* CHAT = "chat";
+	static const char* BOT = "bot";
 }
 
+// redis 관련
 namespace Redis
 {
 	// hiredis 
@@ -329,7 +343,7 @@ namespace Redis
 
 					// 기존 접속들을 강제 종료했으므로 redis의 key들은 expire 된다.
 					// 이를 다시 영구적인 값으로 되돌려 새로 로그인한 클라만이 사용하도록 한다.
-					TerminateRemainUser(ID);
+					Server::TerminateRemainUser(ID);
 					PersistUser(ID);
 				}
 				// 종료 후 5분이 지나기 전에 재접속
