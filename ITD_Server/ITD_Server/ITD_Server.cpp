@@ -113,11 +113,7 @@ bool processClient(shared_ptr<Client> client)
             // 첫 로그인
             if (strcmp(text.GetString(), Json::LOGIN) == 0)
             {
-                {
-                    lock_guard<mutex> lg(Redis::redisMutex);
-
-                    Redis::RegisterUser(string(d[Json::PARAM1].GetString()));
-                }
+                Redis::RegisterUser(string(d[Json::PARAM1].GetString()));
 
                 if (client->ID == NONE)
                     client->ID = string(d[Json::PARAM1].GetString());
@@ -144,6 +140,8 @@ bool processClient(shared_ptr<Client> client)
             else
                 client->packetLen = 0;
         }
+
+        return true;
     }
 
     // 받은 패킷에 대한 응답을 보낸다.
@@ -196,11 +194,10 @@ bool processClient(shared_ptr<Client> client)
             client->lenCompleted = false;
             client->offset = 0;
             client->packetLen = 0;
-            client->sendPacket = "";
         }
-    }
 
-    return true;
+        return true;
+    }
 }
 
 void workerThreadProc() {

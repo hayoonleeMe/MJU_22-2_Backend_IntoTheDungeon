@@ -117,7 +117,6 @@ namespace Redis
 {
 	// hiredis 
 	redisContext* redis;
-
 	mutex redisMutex;
 
 	static const int EXIST_ID = 1;
@@ -141,8 +140,13 @@ namespace Redis
 	void SetUserConnection(const string& ID, const char* status)
 	{
 		string setCmd = "SET USER:" + ID + " " + status;
+		redisReply* reply;
+		{
+			lock_guard<mutex> lg(redisMutex);
 
-		redisReply* reply = (redisReply*)redisCommand(redis, setCmd.c_str());
+			reply = (redisReply*)redisCommand(redis, setCmd.c_str());
+		}
+
 		if (reply->type == REDIS_REPLY_ERROR)
 			cout << "Redis Command Error : " << setCmd << '\n';
 
@@ -151,17 +155,20 @@ namespace Redis
 
 	void SetLocation(const string& ID, int x, int y)
 	{
-		string setCmd = "SET USER:" + ID + LOC_X + " " + to_string(x);
+		string setCmd1 = "SET USER:" + ID + LOC_X + " " + to_string(x);
+		string setCmd2 = "SET USER:" + ID + LOC_Y + " " + to_string(y);
+		redisReply* reply; 
+		{
+			lock_guard<mutex> lg(redisMutex);
 
-		redisReply* reply = (redisReply*)redisCommand(Redis::redis, setCmd.c_str());
-		if (reply->type == REDIS_REPLY_ERROR)
-			cout << "Redis Command Error : " << setCmd << '\n';
+			reply = (redisReply*)redisCommand(Redis::redis, setCmd1.c_str());
+			if (reply->type == REDIS_REPLY_ERROR)
+				cout << "Redis Command Error : " << setCmd1 << '\n';
 
-		setCmd = "SET USER:" + ID + LOC_Y + " " + to_string(y);
-
-		reply = (redisReply*)redisCommand(Redis::redis, setCmd.c_str());
-		if (reply->type == REDIS_REPLY_ERROR)
-			cout << "Redis Command Error : " << setCmd << '\n';
+			reply = (redisReply*)redisCommand(Redis::redis, setCmd2.c_str());
+			if (reply->type == REDIS_REPLY_ERROR)
+				cout << "Redis Command Error : " << setCmd2 << '\n';
+		}
 
 		freeReplyObject(reply);
 	}
@@ -169,8 +176,13 @@ namespace Redis
 	void SetHp(const string& ID, int hp)
 	{
 		string setCmd = "SET USER:" + ID + HP + " " + to_string(hp);
+		redisReply* reply;
+		{
+			lock_guard<mutex> lg(redisMutex);
 
-		redisReply* reply = (redisReply*)redisCommand(Redis::redis, setCmd.c_str());
+			reply = (redisReply*)redisCommand(Redis::redis, setCmd.c_str());
+		}
+
 		if (reply->type == REDIS_REPLY_ERROR)
 			cout << "Redis Command Error : " << setCmd << '\n';
 
@@ -180,8 +192,13 @@ namespace Redis
 	void SetStr(const string& ID, int str)
 	{
 		string setCmd = "SET USER:" + ID + STR + " " + to_string(str);
+		redisReply* reply; 
+		{
+			lock_guard<mutex> lg(redisMutex);
 
-		redisReply* reply = (redisReply*)redisCommand(Redis::redis, setCmd.c_str());
+			reply = (redisReply*)redisCommand(Redis::redis, setCmd.c_str());
+		}
+
 		if (reply->type == REDIS_REPLY_ERROR)
 			cout << "Redis Command Error : " << setCmd << '\n';
 
@@ -191,8 +208,13 @@ namespace Redis
 	void SetHpPotion(const string& ID, int numOfPotion)
 	{
 		string setCmd = "SET USER:" + ID + POTION_HP + " " + to_string(numOfPotion);
+		redisReply* reply; 
+		{
+			lock_guard<mutex> lg(redisMutex);
 
-		redisReply* reply = (redisReply*)redisCommand(Redis::redis, setCmd.c_str());
+			reply = (redisReply*)redisCommand(Redis::redis, setCmd.c_str());
+		}
+
 		if (reply->type == REDIS_REPLY_ERROR)
 			cout << "Redis Command Error : " << setCmd << '\n';
 
@@ -202,8 +224,13 @@ namespace Redis
 	void SetStrPotion(const string& ID, int numOfPotion)
 	{
 		string setCmd = "SET USER:" + ID + POTION_STR + " " + to_string(numOfPotion);
+		redisReply* reply;
+		{
+			lock_guard<mutex> lg(redisMutex);
 
-		redisReply* reply = (redisReply*)redisCommand(Redis::redis, setCmd.c_str());
+			reply = (redisReply*)redisCommand(Redis::redis, setCmd.c_str());
+		}
+
 		if (reply->type == REDIS_REPLY_ERROR)
 			cout << "Redis Command Error : " << setCmd << '\n';
 
@@ -213,8 +240,13 @@ namespace Redis
 	string GetUserConnection(const string& ID)
 	{
 		string getCmd = "GET USER:" + ID;
+		redisReply* reply;
+		{
+			lock_guard<mutex> lg(redisMutex);
 
-		redisReply* reply = (redisReply*)redisCommand(redis, getCmd.c_str());
+			reply = (redisReply*)redisCommand(redis, getCmd.c_str());
+		}
+
 		if (reply->type == REDIS_REPLY_STRING)
 			return reply->str;
 
@@ -230,15 +262,19 @@ namespace Redis
 
 		string expireCmd;
 		redisReply* reply;
-		for (int i = 0; i < numOfCmd; ++i)
 		{
-			expireCmd = "EXPIRE USER:" + ID + properties[i] + " " + EXPIRE_TIME;
+			lock_guard<mutex> lg(redisMutex);
 
-			reply = (redisReply*)redisCommand(redis, expireCmd.c_str());
+			for (int i = 0; i < numOfCmd; ++i)
+			{
+				expireCmd = "EXPIRE USER:" + ID + properties[i] + " " + EXPIRE_TIME;
 
-			if (reply->type == REDIS_REPLY_ERROR)
-				cout << "Redis Command Error : " << expireCmd << '\n';
+				reply = (redisReply*)redisCommand(redis, expireCmd.c_str());
 
+				if (reply->type == REDIS_REPLY_ERROR)
+					cout << "Redis Command Error : " << expireCmd << '\n';
+
+			}
 		}
 		freeReplyObject(reply);
 	}
@@ -251,15 +287,18 @@ namespace Redis
 
 		string persistCmd;
 		redisReply* reply;
-		for (int i = 0; i < numOfCmd; ++i)
 		{
-			persistCmd = "PERSIST USER:" + ID + properties[i];
+			lock_guard<mutex> lg(redisMutex);
 
-			reply = (redisReply*)redisCommand(redis, persistCmd.c_str());
+			for (int i = 0; i < numOfCmd; ++i)
+			{
+				persistCmd = "PERSIST USER:" + ID + properties[i];
 
-			if (reply->type == REDIS_REPLY_ERROR)
-				cout << "Redis Command Error : " << persistCmd << '\n';
+				reply = (redisReply*)redisCommand(redis, persistCmd.c_str());
 
+				if (reply->type == REDIS_REPLY_ERROR)
+					cout << "Redis Command Error : " << persistCmd << '\n';
+			}
 		}
 		freeReplyObject(reply);
 
@@ -271,7 +310,13 @@ namespace Redis
 	{
 		// 해당 ID로 로그인한 유저가 있는지 체크
 		string exitCmd = "Exists USER:" + ID;
-		redisReply* reply = (redisReply*)redisCommand(redis, exitCmd.c_str());
+		redisReply* reply;
+		{
+			lock_guard<mutex> lg(redisMutex);
+
+			reply = (redisReply*)redisCommand(redis, exitCmd.c_str());
+		}
+
 		if (reply->type == REDIS_REPLY_INTEGER)
 		{
 			// USER:ID 가 존재할 때
