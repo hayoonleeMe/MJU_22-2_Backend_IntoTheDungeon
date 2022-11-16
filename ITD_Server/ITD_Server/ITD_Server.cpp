@@ -36,7 +36,7 @@ bool processClient(shared_ptr<Client> client)
     SOCKET activeSock = client->sock;
 
     // 패킷을 받는다.
-    if (client->sendTurn == false)
+    if (client->sendTurn == false && !isRepeat)
     {
         if (client->lenCompleted == false) 
         {
@@ -115,16 +115,16 @@ bool processClient(shared_ptr<Client> client)
             {
                 Redis::RegisterUser(string(d[Json::PARAM1].GetString()));
 
-                if (client->ID == NONE)
+                if (client->ID == "")
                     client->ID = string(d[Json::PARAM1].GetString());
             }
             // 이미 로그인된 유저로부터 명령어 받음
             else
             {
                 // 명령별 로직 수행
-                if (strcmp(text.GetString(), Json::MOVE) == 0)
+                /*if (strcmp(text.GetString(), Json::MOVE) == 0)
                 {
-                    client->sendPacket = Logic::ProcessMove(client->ID);
+                    client->sendPacket = Logic::ProcessMove(client->ID, "", "");
                 }
                 else if (strcmp(text.GetString(), Json::ATTACK) == 0)
                 {
@@ -136,7 +136,7 @@ bool processClient(shared_ptr<Client> client)
                 }
                 else if (strcmp(text.GetString(), Json::USERS) == 0)
                 {
-                    client->sendPacket = Logic::ProcessUsers(client->ID);
+                    client->sendPacket = Logic::ProcessUsers(client->ID, "", "");
                 }
                 else if (strcmp(text.GetString(), Json::CHAT) == 0)
                 {
@@ -145,11 +145,13 @@ bool processClient(shared_ptr<Client> client)
                 else if (strcmp(text.GetString(), Json::BOT) == 0)
                 {
                     client->sendPacket = Logic::ProcessBot(client->ID);
-                }
-
-                // 보낼 패킷 설정 
-                client->sendTurn = true;
+                }*/
             }
+
+            client->sendPacket = json;
+
+            // 보낼 패킷 설정 
+            client->sendTurn = true;
 
             // 다음 패킷을 위해 패킷 관련 정보를 초기화한다.
             client->lenCompleted = false;
@@ -166,7 +168,7 @@ bool processClient(shared_ptr<Client> client)
     // 받은 패킷에 대한 응답을 보낸다.
     if (client->sendTurn)
     {   
-        cout << "Send Start : " << client->ID << '\n';
+        cout << "Send Start to " << client->ID << '\n';
 
         if (client->lenCompleted == false) 
         {
@@ -213,6 +215,9 @@ bool processClient(shared_ptr<Client> client)
             client->lenCompleted = false;
             client->offset = 0;
             client->packetLen = 0;
+
+            if (isRepeat)
+                isRepeat = false;
         }
 
         return true;
@@ -221,13 +226,16 @@ bool processClient(shared_ptr<Client> client)
     return true;
 }
 
-void workerThreadProc() {
-    while (true) {
+void workerThreadProc() 
+{
+    while (true) 
+    {
         shared_ptr<Client> client;
         {
             unique_lock<mutex> ul(Server::jobQueueMutex);
 
-            while (Server::jobQueue.empty()) {
+            while (Server::jobQueue.empty()) 
+            {
                 Server::jobQueueFilledCv.wait(ul);
             }
 
@@ -235,10 +243,12 @@ void workerThreadProc() {
             Server::jobQueue.pop();
         }
 
-        if (client) {
+        if (client) 
+        {
             SOCKET activeSock = client->sock;
             bool successful = processClient(client);
-            if (successful == false) {
+            if (successful == false) 
+            {
                 closesocket(activeSock);
                 {
                     lock_guard<mutex> lg(Server::activeClientsMutex);
@@ -246,7 +256,8 @@ void workerThreadProc() {
                     Server::activeClients.erase(activeSock);
                 }
             }
-            else {
+            else 
+            {
                 client->doingRecv.store(false);
             }
         }
@@ -271,7 +282,8 @@ int main()
     // Winsock 을 초기화한다.
     WSADATA wsaData;
     r = WSAStartup(MAKEWORD(2, 2), &wsaData);
-    if (r != NO_ERROR) {
+    if (r != NO_ERROR) 
+    {
         cerr << "WSAStartup failed with error " << r << endl;
         return 1;
     }
@@ -280,12 +292,17 @@ int main()
     SOCKET passiveSock = createPassiveSocket();
 
     list<shared_ptr<thread> > threads;
-    for (int i = 0; i < Server::NUM_WORKER_THREADS; ++i) {
+    for (int i = 0; i < Server::NUM_WORKER_THREADS; ++i) 
+    {
         shared_ptr<thread> workerThread(new thread(workerThreadProc));
         threads.push_back(workerThread);
     }
+    shared_ptr<thread> sendThread(new thread(SendDataRepeat));
+    threads.push_back(sendThread);
 
-    while (true) {
+
+    while (true) 
+    {
         int sendCount = 0;
 
         fd_set readSet, exceptionSet;
@@ -301,11 +318,13 @@ int main()
         maxSock = max(maxSock, passiveSock);
 
         // 현재 남아있는 active socket 들에 대해서도 모두 set 에 넣어준다.
-        for (auto& entry : Server::activeClients) {
+        for (auto& entry : Server::activeClients) 
+        {
             SOCKET activeSock = entry.first;
             shared_ptr<Client> client = entry.second;
 
-            if (client->doingRecv.load() == false) {
+            if (client->doingRecv.load() == false) 
+            {
                 FD_SET(activeSock, &readSet);
                 FD_SET(activeSock, &exceptionSet);
                 maxSock = max(maxSock, activeSock);
@@ -321,30 +340,35 @@ int main()
         r = select(maxSock + 1, &readSet, NULL, &exceptionSet, &timeout);
 
         // 회복할 수 없는 오류이다. 서버를 중단한다.
-        if (r == SOCKET_ERROR) {
+        if (r == SOCKET_ERROR) 
+        {
             cerr << "select failed: " << WSAGetLastError() << endl;
             break;
         }
 
         // 아무것도 반환을 안한 경우는 아래를 처리하지 않고 바로 다시 select 를 하게 한다.
         // select 의 반환값은 오류일 때 SOCKET_ERROR, 그 외의 경우 이벤트가 발생한 소켓 갯수이다.
-        if (r == 0 && sendCount == 0) {
+        if (r == 0 && sendCount == 0) 
+        {
             continue;
         }
 
         // passive socket 이 readable 하다면 이는 새 연결이 들어왔다는 것이다.
-        if (FD_ISSET(passiveSock, &readSet)) {
+        if (FD_ISSET(passiveSock, &readSet)) 
+        {                                                                       
             // passive socket 을 이용해 accept() 를 한다.
             cout << "Waiting for a connection" << endl;
             struct sockaddr_in clientAddr;
             int clientAddrSize = sizeof(clientAddr);
             SOCKET activeSock = accept(passiveSock, (sockaddr*)&clientAddr, &clientAddrSize);
 
-            if (activeSock == INVALID_SOCKET) {
+            if (activeSock == INVALID_SOCKET) 
+            {
                 cerr << "accept failed with error " << WSAGetLastError() << endl;
                 return 1;
             }
-            else {
+            else 
+            {
                 shared_ptr<Client> newClient(new Client(activeSock));
 
                 Server::activeClients.insert(make_pair(activeSock, newClient));
@@ -358,11 +382,13 @@ int main()
 
         // 오류 이벤트가 발생하는 소켓의 클라이언트는 제거한다.
         list<SOCKET> toDelete;
-        for (auto& entry : Server::activeClients) {
+        for (auto& entry : Server::activeClients)
+        {
             SOCKET activeSock = entry.first;
             shared_ptr<Client> client = entry.second;
 
-            if (FD_ISSET(activeSock, &exceptionSet)) {
+            if (FD_ISSET(activeSock, &exceptionSet)) 
+            {
                 cerr << "Exception on socket " << activeSock << endl;
 
                 // 소켓을 닫는다.
@@ -376,7 +402,8 @@ int main()
             }
 
             // 읽기 이벤트가 발생하는 소켓의 경우 recv() 를 처리한다.
-            if (FD_ISSET(activeSock, &readSet) || client->sendTurn) {
+            if (FD_ISSET(activeSock, &readSet) || client->sendTurn) 
+            {
                 // 이제 다시 select 대상이 되지 않도록 client 의 flag 를 켜준다.
                 client->doingRecv.store(true);
 
@@ -407,13 +434,16 @@ int main()
     }
 
     // 이제 threads 들을 join 한다.
-    for (shared_ptr<thread>& workerThread : threads) {
+    for (shared_ptr<thread>& workerThread : threads) 
+    {
         workerThread->join();
     }
+    sendThread->join();
 
     // 연결을 기다리는 passive socket 을 닫는다.
     r = closesocket(passiveSock);
-    if (r == SOCKET_ERROR) {
+    if (r == SOCKET_ERROR) 
+    {
         cerr << "closesocket(passive) failed with error " << WSAGetLastError() << endl;
         return 1;
     }

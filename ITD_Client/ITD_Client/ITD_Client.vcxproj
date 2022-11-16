@@ -140,6 +140,10 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="ITD_Client.cpp" />
+    <ClCompile Include="temp.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="ITD_Client.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

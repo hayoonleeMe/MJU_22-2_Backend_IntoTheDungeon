@@ -92,10 +92,10 @@ namespace Logic
 	static const int NUM_DUNGEON_X = 30;
 	static const int NUM_DUNGEON_Y = 30;
 
-	string ProcessMove(const string& ID);
+	string ProcessMove(const string& ID, const char* x, const char* y);
 	string ProcessAttack(const string& ID);
 	string ProcessMonsters(const string& ID);
-	string ProcessUsers(const string& ID);
+	string ProcessUsers(const string& ID, const char* user, const char* msg);
 	string ProcessChat(const string& ID);
 	string ProcessBot(const string& ID);
 }
@@ -391,7 +391,7 @@ Client::~Client()
 	cout << "Client destroyed. Socket: " << sock << endl;
 }
 
-string Logic::ProcessMove(const string& ID)
+string Logic::ProcessMove(const string& ID, const char* x, const char* y)
 {
 	return "";
 }
@@ -406,7 +406,7 @@ string Logic::ProcessMonsters(const string& ID)
 	return "";
 }
 
-string Logic::ProcessUsers(const string& ID)
+string Logic::ProcessUsers(const string& ID, const char* name, const char* msg)
 {
 	return "";
 }
@@ -419,4 +419,32 @@ string Logic::ProcessChat(const string& ID)
 string Logic::ProcessBot(const string& ID)
 {
 	return "";
+}
+
+bool isRepeat = false;
+
+void SendDataRepeat()
+{
+	std::this_thread::sleep_for(std::chrono::seconds(7));
+
+	while (1)
+	{
+		{
+			lock_guard<mutex> lg(Server::activeClientsMutex);
+
+			for (auto& entry : Server::activeClients)
+			{
+				if (entry.second->doingRecv.load() == false)
+				{
+					cout << "repeated send set : " << entry.first << '\n';
+					entry.second->sendTurn = true;
+					entry.second->sendPacket = string("repeated data");
+					entry.second->packetLen = htonl(entry.second->sendPacket.length());
+					isRepeat = true;
+				}
+			}
+		}
+
+		this_thread::sleep_for(chrono::seconds(4));
+	}
 }
