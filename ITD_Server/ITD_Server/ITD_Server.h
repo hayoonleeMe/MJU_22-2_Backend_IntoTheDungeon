@@ -35,18 +35,16 @@ public:
 	~Client();
 
 public:
-	atomic<bool> doingRecv;
-
 	SOCKET sock;  // 이 클라이언트의 active socket
+	string ID;	// 로그인된 유저의 ID
 
+	atomic<bool> doingRecv;
 	bool sendTurn;
 	bool lenCompleted;
 	int packetLen;
 	char packet[65536];  // 최대 64KB 로 패킷 사이즈 고정
 	string sendPacket;
 	int offset;
-
-	string ID;	// 로그인된 유저의 ID
 };
 
 // 서버 구동 관련
@@ -92,12 +90,11 @@ namespace Logic
 	static const int NUM_DUNGEON_X = 30;
 	static const int NUM_DUNGEON_Y = 30;
 
-	string ProcessMove(const string& ID, const char* x, const char* y);
+	void ProcessMove(const string& ID, const char* x, const char* y);
 	string ProcessAttack(const string& ID);
 	string ProcessMonsters(const string& ID);
-	string ProcessUsers(const string& ID, const char* user, const char* msg);
-	string ProcessChat(const string& ID);
-	string ProcessBot(const string& ID);
+	string ProcessUsers(const string& ID);
+	string ProcessChat(const string& ID, const char* user, const char* msg);
 }
 
 // 난수 관련
@@ -129,7 +126,6 @@ namespace Json
 	static const char* MONSTERS = "monsters";
 	static const char* USERS = "users";
 	static const char* CHAT = "chat";
-	static const char* BOT = "bot";
 }
 
 // redis 관련
@@ -391,9 +387,9 @@ Client::~Client()
 	cout << "Client destroyed. Socket: " << sock << endl;
 }
 
-string Logic::ProcessMove(const string& ID, const char* x, const char* y)
+void Logic::ProcessMove(const string& ID, const char* x, const char* y)
 {
-	return "";
+	Redis::SetLocation(ID, stoi(x), stoi(y));
 }
 
 string Logic::ProcessAttack(const string& ID)
@@ -406,45 +402,39 @@ string Logic::ProcessMonsters(const string& ID)
 	return "";
 }
 
-string Logic::ProcessUsers(const string& ID, const char* name, const char* msg)
+string Logic::ProcessUsers(const string& ID)
 {
 	return "";
 }
 
-string Logic::ProcessChat(const string& ID)
+string Logic::ProcessChat(const string& ID, const char* name, const char* msg)
 {
 	return "";
 }
 
-string Logic::ProcessBot(const string& ID)
-{
-	return "";
-}
-
-bool isRepeat = false;
-
-void SendDataRepeat()
-{
-	std::this_thread::sleep_for(std::chrono::seconds(7));
-
-	while (1)
-	{
-		{
-			lock_guard<mutex> lg(Server::activeClientsMutex);
-
-			for (auto& entry : Server::activeClients)
-			{
-				if (entry.second->doingRecv.load() == false)
-				{
-					cout << "repeated send set : " << entry.first << '\n';
-					entry.second->sendTurn = true;
-					entry.second->sendPacket = string("repeated data");
-					entry.second->packetLen = htonl(entry.second->sendPacket.length());
-					isRepeat = true;
-				}
-			}
-		}
-
-		this_thread::sleep_for(chrono::seconds(4));
-	}
-}
+//bool isRepeat = false;
+//void SendDataRepeat()
+//{
+//	std::this_thread::sleep_for(std::chrono::seconds(7));
+//
+//	while (1)
+//	{
+//		{
+//			lock_guard<mutex> lg(Server::activeClientsMutex);
+//
+//			for (auto& entry : Server::activeClients)
+//			{
+//				if (entry.second->doingRecv.load() == false)
+//				{
+//					cout << "repeated send set : " << entry.first << '\n';
+//					entry.second->sendTurn = true;
+//					entry.second->sendPacket = string("repeated data");
+//					entry.second->packetLen = htonl(entry.second->sendPacket.length());
+//					isRepeat = true;
+//				}
+//			}
+//		}
+//
+//		this_thread::sleep_for(chrono::seconds(4));
+//	}
+//}

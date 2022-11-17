@@ -36,7 +36,7 @@ bool processClient(shared_ptr<Client> client)
     SOCKET activeSock = client->sock;
 
     // 패킷을 받는다.
-    if (client->sendTurn == false && !isRepeat)
+    if (client->sendTurn == false)
     {
         if (client->lenCompleted == false) 
         {
@@ -122,9 +122,9 @@ bool processClient(shared_ptr<Client> client)
             else
             {
                 // 명령별 로직 수행
-                /*if (strcmp(text.GetString(), Json::MOVE) == 0)
+                if (strcmp(text.GetString(), Json::MOVE) == 0)
                 {
-                    client->sendPacket = Logic::ProcessMove(client->ID, "", "");
+                    Logic::ProcessMove(client->ID, d[Json::PARAM1].GetString(), d[Json::PARAM2].GetString());
                 }
                 else if (strcmp(text.GetString(), Json::ATTACK) == 0)
                 {
@@ -136,16 +136,12 @@ bool processClient(shared_ptr<Client> client)
                 }
                 else if (strcmp(text.GetString(), Json::USERS) == 0)
                 {
-                    client->sendPacket = Logic::ProcessUsers(client->ID, "", "");
+                    client->sendPacket = Logic::ProcessUsers(client->ID);
                 }
                 else if (strcmp(text.GetString(), Json::CHAT) == 0)
                 {
-                    client->sendPacket = Logic::ProcessChat(client->ID);
+                    client->sendPacket = Logic::ProcessChat(client->ID, d[Json::PARAM1].GetString(), d[Json::PARAM2].GetString());
                 }
-                else if (strcmp(text.GetString(), Json::BOT) == 0)
-                {
-                    client->sendPacket = Logic::ProcessBot(client->ID);
-                }*/
             }
 
             client->sendPacket = json;
@@ -215,9 +211,6 @@ bool processClient(shared_ptr<Client> client)
             client->lenCompleted = false;
             client->offset = 0;
             client->packetLen = 0;
-
-            if (isRepeat)
-                isRepeat = false;
         }
 
         return true;
@@ -297,9 +290,6 @@ int main()
         shared_ptr<thread> workerThread(new thread(workerThreadProc));
         threads.push_back(workerThread);
     }
-    shared_ptr<thread> sendThread(new thread(SendDataRepeat));
-    threads.push_back(sendThread);
-
 
     while (true) 
     {
@@ -435,10 +425,7 @@ int main()
 
     // 이제 threads 들을 join 한다.
     for (shared_ptr<thread>& workerThread : threads) 
-    {
         workerThread->join();
-    }
-    sendThread->join();
 
     // 연결을 기다리는 passive socket 을 닫는다.
     r = closesocket(passiveSock);
