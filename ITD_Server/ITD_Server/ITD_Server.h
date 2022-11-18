@@ -3,6 +3,7 @@
 #define RAPIDJSON_HAS_STDSTRING 1
 #include "rapidjson/document.h"
 
+#include <algorithm>
 #include <chrono>
 #include <condition_variable>
 #include <functional>
@@ -104,6 +105,13 @@ namespace Logic
 	static const int NUM_DUNGEON_Y = 30;
 
 	map<string, Handler> handlers;
+
+	int Clamp(int value, int minValue, int maxValue)
+	{
+		int result = max(minValue, value);
+		result = min(maxValue, value);
+		return result;
+	}
 
 	string ProcessMove(const string& ID, const Job& job);
 	string ProcessAttack(const string& ID, const Job& job);
@@ -227,6 +235,24 @@ namespace Redis
 		return ret;
 	}
 
+	string GetHp(const string& ID)
+	{
+		string ret = "";
+		string getCmd = "GET USER:" + ID + HP;
+		redisReply* reply;
+		{
+			lock_guard<mutex> lg(redisMutex);
+
+			reply = (redisReply*)redisCommand(Redis::redis, getCmd.c_str());
+			if (reply->type == REDIS_REPLY_STRING)
+				ret = reply->str;
+		}
+
+		freeReplyObject(reply);
+
+		return ret;
+	}
+
 	void SetUserConnection(const string& ID, const char* status)
 	{
 		string setCmd = "SET USER:" + ID + " " + status;
@@ -253,11 +279,11 @@ namespace Redis
 		}
 		else
 		{
-			int origX = stoi(GetLocationX(ID));
-			int origY = stoi(GetLocationY(ID));
+			int newX = Logic::Clamp(stoi(GetLocationX(ID)) + x, 0, Logic::NUM_DUNGEON_X - 1);
+			int newY = Logic::Clamp(stoi(GetLocationY(ID)) + y, 0, Logic::NUM_DUNGEON_Y - 1);
 
-			setCmd1 = "SET USER:" + ID + LOC_X + " " + to_string(origX + x);
-			setCmd2 = "SET USER:" + ID + LOC_Y + " " + to_string(origY + y);
+			setCmd1 = "SET USER:" + ID + LOC_X + " " + to_string(newX);
+			setCmd2 = "SET USER:" + ID + LOC_Y + " " + to_string(newY);
 		}
 
 		cout << "setCmd1 : " << setCmd1 << " setCmd2 : " << setCmd2 << '\n';
@@ -278,9 +304,19 @@ namespace Redis
 		freeReplyObject(reply);
 	}
 	
-	void SetHp(const string& ID, int hp)
+	void SetHp(const string& ID, int hp, Type t = Type::E_ABSOLUTE)
 	{
-		string setCmd = "SET USER:" + ID + HP + " " + to_string(hp);
+		string setCmd;
+		if (t == Type::E_ABSOLUTE)
+		{
+			setCmd = "SET USER:" + ID + HP + " " + to_string(hp);
+		}
+		else
+		{
+			int newHp = Logic::Clamp(stoi(GetHp(ID)) + hp, 0, 30);
+			setCmd = "SET USER:" + ID + HP + " " + to_string(newHp);
+		}
+		
 		redisReply* reply;
 		{
 			lock_guard<mutex> lg(redisMutex);
@@ -341,8 +377,6 @@ namespace Redis
 
 		freeReplyObject(reply);
 	}
-
-	
 
 	void ExpireUser(const string& ID)
 	{
