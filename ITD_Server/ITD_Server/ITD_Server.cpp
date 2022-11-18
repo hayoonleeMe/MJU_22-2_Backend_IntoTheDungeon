@@ -127,12 +127,10 @@ bool processClient(shared_ptr<Client> client)
                 {
                     job.param1 = document[Json::PARAM1].GetString();
                     job.param2 = document[Json::PARAM2].GetString();
-                    cout << "PARAM1 : " << job.param1 << " PARAM2 : " << job.param2 << '\n';
                 }
-                (Logic::handlers[text.GetString()])(client->ID, job);
-            }
 
-            client->sendPacket = json;
+                client->sendPacket = (Logic::handlers[text.GetString()])(client->ID, job);
+            }
 
             // 보낼 패킷 설정 
             client->sendTurn = true;

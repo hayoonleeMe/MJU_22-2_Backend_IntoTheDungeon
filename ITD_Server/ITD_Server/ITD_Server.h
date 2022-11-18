@@ -274,8 +274,11 @@ namespace Redis
 		string setCmd1, setCmd2;
 		if (t == Type::E_ABSOLUTE)
 		{
-			setCmd1 = "SET USER:" + ID + LOC_X + " " + to_string(x);
-			setCmd2 = "SET USER:" + ID + LOC_Y + " " + to_string(y);
+			int newX = Logic::Clamp(x, 0, Logic::NUM_DUNGEON_X - 1);
+			int newY = Logic::Clamp(y, 0, Logic::NUM_DUNGEON_Y - 1);
+
+			setCmd1 = "SET USER:" + ID + LOC_X + " " + to_string(newX);
+			setCmd2 = "SET USER:" + ID + LOC_Y + " " + to_string(newY);
 		}
 		else
 		{
@@ -309,10 +312,13 @@ namespace Redis
 		string setCmd;
 		if (t == Type::E_ABSOLUTE)
 		{
-			setCmd = "SET USER:" + ID + HP + " " + to_string(hp);
+			// TODO : HP의 하한, 상한을 정해야 함
+			int newHp = Logic::Clamp(hp, 0, 30);
+			setCmd = "SET USER:" + ID + HP + " " + to_string(newHp);
 		}
 		else
 		{
+			// TODO : HP의 하한, 상한을 정해야 함
 			int newHp = Logic::Clamp(stoi(GetHp(ID)) + hp, 0, 30);
 			setCmd = "SET USER:" + ID + HP + " " + to_string(newHp);
 		}
@@ -500,7 +506,8 @@ string Logic::ProcessMove(const string& ID, const Job& job)
 {
 	cout << "ProcessMove is called\n";
 	Redis::SetLocation(ID, stoi(job.param1), stoi(job.param2), Redis::Type::E_RELATIVE);
-	return "";
+	// "유저가 (x, y)로 이동했다."
+	return "{\"text\":\"(" + Redis::GetLocationX(ID) + "," + Redis::GetLocationY(ID) + ")로 이동했다.\"}";
 }
 
 string Logic::ProcessAttack(const string& ID, const Job& job)
