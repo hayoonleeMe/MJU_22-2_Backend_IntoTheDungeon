@@ -1,12 +1,11 @@
 #pragma once
 
-#define _CRT_SECURE_NO_WARNINGS
-
 #define RAPIDJSON_HAS_STDSTRING 1
 #include "rapidjson/document.h"
 
 #include <chrono>
 #include <condition_variable>
+#include <functional>
 #include <string>
 #include <hiredis/hiredis.h>
 #include <iostream>
@@ -46,6 +45,20 @@ public:
 	string sendPacket;
 	int offset;
 };
+
+struct Job
+{
+	string param1;
+	string param2;
+
+	Job()
+	{}
+	Job(string param1, string param2)
+		: param1(param1), param2(param2)
+	{}
+};
+
+typedef function<string(string, Job)> Handler;
 
 // 서버 구동 관련
 namespace Server
@@ -90,11 +103,14 @@ namespace Logic
 	static const int NUM_DUNGEON_X = 30;
 	static const int NUM_DUNGEON_Y = 30;
 
-	void ProcessMove(const string& ID, const char* x, const char* y);
-	string ProcessAttack(const string& ID);
-	string ProcessMonsters(const string& ID);
-	string ProcessUsers(const string& ID);
-	string ProcessChat(const string& ID, const char* user, const char* msg);
+	map<string, Handler> handlers;
+
+	string ProcessMove(const string& ID, const Job& job);
+	string ProcessAttack(const string& ID, const Job& job);
+	string ProcessMonsters(const string& ID, const Job& job);
+	string ProcessUsers(const string& ID, const Job& job);
+	string ProcessChat(const string& ID, const Job& job);
+	void InitHandlers();
 }
 
 // 난수 관련
@@ -387,29 +403,44 @@ Client::~Client()
 	cout << "Client destroyed. Socket: " << sock << endl;
 }
 
-void Logic::ProcessMove(const string& ID, const char* x, const char* y)
+string Logic::ProcessMove(const string& ID, const Job& job)
 {
-	Redis::SetLocation(ID, stoi(x), stoi(y));
-}
-
-string Logic::ProcessAttack(const string& ID)
-{
+	cout << "ProcessMove is called\n";
+	Redis::SetLocation(ID, stoi(job.param1), stoi(job.param2));
 	return "";
 }
 
-string Logic::ProcessMonsters(const string& ID)
+string Logic::ProcessAttack(const string& ID, const Job& job)
 {
+	cout << "ProcessAttack is called\n";
 	return "";
 }
 
-string Logic::ProcessUsers(const string& ID)
+string Logic::ProcessMonsters(const string& ID, const Job& job)
 {
+	cout << "ProcessMonsters is called\n";
 	return "";
 }
 
-string Logic::ProcessChat(const string& ID, const char* name, const char* msg)
+string Logic::ProcessUsers(const string& ID, const Job& job)
 {
+	cout << "ProcessUsers is called\n";
 	return "";
+}
+
+string Logic::ProcessChat(const string& ID, const Job& job)
+{
+	cout << "ProcessChat is called\n";
+	return "";
+}
+
+void Logic::InitHandlers()
+{
+	handlers[Json::MOVE] = ProcessMove;
+	handlers[Json::ATTACK] = ProcessAttack;
+	handlers[Json::MONSTERS] = ProcessMonsters;
+	handlers[Json::USERS] = ProcessUsers;
+	handlers[Json::CHAT] = ProcessChat;
 }
 
 //bool isRepeat = false;

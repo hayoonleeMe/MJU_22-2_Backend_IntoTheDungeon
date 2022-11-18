@@ -16,7 +16,7 @@ SOCKET createPassiveSocket()
     serverAddr.sin_port = htons(Server::SERVER_PORT);
     serverAddr.sin_addr.s_addr = htonl(INADDR_ANY);
 
-    int r = bind(passiveSock, (sockaddr*)&serverAddr, sizeof(serverAddr));
+    int r = ::bind(passiveSock, (sockaddr*)&serverAddr, sizeof(serverAddr));
     if (r == SOCKET_ERROR) {
         cerr << "bind failed with error " << WSAGetLastError() << endl;
         return 1;
@@ -104,44 +104,32 @@ bool processClient(shared_ptr<Client> client)
             // TODO: 클라이언트로부터 받은 텍스트에 따라 로직 수행
             const string json = string(client->packet).substr(0, client->packetLen);
 
-            Document d;
-            d.Parse(json);
+            Document document;
+            document.Parse(json);
 
             // 명령어
-            Value& text = d[Json::TEXT];
+            Value& text = document[Json::TEXT];
 
             // 첫 로그인
             if (strcmp(text.GetString(), Json::LOGIN) == 0)
             {
-                Redis::RegisterUser(string(d[Json::PARAM1].GetString()));
+                Redis::RegisterUser(string(document[Json::PARAM1].GetString()));
 
                 if (client->ID == "")
-                    client->ID = string(d[Json::PARAM1].GetString());
+                    client->ID = string(document[Json::PARAM1].GetString());
             }
             // 이미 로그인된 유저로부터 명령어 받음
             else
             {
                 // 명령별 로직 수행
-                if (strcmp(text.GetString(), Json::MOVE) == 0)
+                Job job;
+                if (document.HasMember(Json::PARAM1))
                 {
-                    Logic::ProcessMove(client->ID, d[Json::PARAM1].GetString(), d[Json::PARAM2].GetString());
+                    job.param1 = document[Json::PARAM1].GetString();
+                    job.param2 = document[Json::PARAM2].GetString();
+                    cout << "PARAM1 : " << job.param1 << " PARAM2 : " << job.param2 << '\n';
                 }
-                else if (strcmp(text.GetString(), Json::ATTACK) == 0)
-                {
-                    client->sendPacket = Logic::ProcessAttack(client->ID);
-                }
-                else if (strcmp(text.GetString(), Json::MONSTERS) == 0)
-                {
-                    client->sendPacket = Logic::ProcessMonsters(client->ID);
-                }
-                else if (strcmp(text.GetString(), Json::USERS) == 0)
-                {
-                    client->sendPacket = Logic::ProcessUsers(client->ID);
-                }
-                else if (strcmp(text.GetString(), Json::CHAT) == 0)
-                {
-                    client->sendPacket = Logic::ProcessChat(client->ID, d[Json::PARAM1].GetString(), d[Json::PARAM2].GetString());
-                }
+                (Logic::handlers[text.GetString()])(client->ID, job);
             }
 
             client->sendPacket = json;
@@ -269,6 +257,9 @@ int main()
             printf("Can't allocate redis context\n");
         return 1;
     }
+
+    // Handler Map 초기화
+    Logic::InitHandlers();
 
     int r = 0;
 

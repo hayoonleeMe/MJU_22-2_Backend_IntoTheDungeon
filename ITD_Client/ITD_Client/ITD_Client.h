@@ -163,10 +163,10 @@ namespace Logic
 
 		if (input == "move")
 		{
-			int x, y;
+			string x, y;
 			cin >> x >> y;
 
-			text += ",\"first\":" + to_string(x) + ",\"second\":" + to_string(y);
+			text += ",\"first\":\"" + x + "\",\"second\":\"" + y + "\"";
 		}
 		else if (input == "chat")
 		{
