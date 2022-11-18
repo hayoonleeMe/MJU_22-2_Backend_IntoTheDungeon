@@ -151,6 +151,12 @@ namespace Redis
 	redisContext* redis;
 	mutex redisMutex;
 
+	enum class Type
+	{
+		E_ABSOLUTE,
+		E_RELATIVE
+	};
+
 	static const int EXIST_ID = 1;
 
 	static const char* EXPIRE_TIME = "30";
@@ -169,6 +175,58 @@ namespace Redis
 	static const int DEFAULT_POTION_HP = 1;
 	static const int DEFAULT_POTION_STR = 1;
 
+	string GetUserConnection(const string& ID)
+	{
+		string getCmd = "GET USER:" + ID;
+		redisReply* reply;
+		{
+			lock_guard<mutex> lg(redisMutex);
+
+			reply = (redisReply*)redisCommand(redis, getCmd.c_str());
+		}
+
+		if (reply->type == REDIS_REPLY_STRING)
+			return reply->str;
+
+		return "";
+	}
+
+	string GetLocationX(const string& ID)
+	{
+		string ret = "";
+		string getCmd = "GET USER:" + ID + LOC_X;
+		redisReply* reply;
+		{
+			lock_guard<mutex> lg(redisMutex);
+
+			reply = (redisReply*)redisCommand(Redis::redis, getCmd.c_str());
+			if (reply->type == REDIS_REPLY_STRING)
+				ret = reply->str;
+		}
+
+		freeReplyObject(reply);
+
+		return ret;
+	}
+
+	string GetLocationY(const string& ID)
+	{
+		string ret = "";
+		string getCmd = "GET USER:" + ID + LOC_Y;
+		redisReply* reply;
+		{
+			lock_guard<mutex> lg(redisMutex);
+
+			reply = (redisReply*)redisCommand(Redis::redis, getCmd.c_str());
+			if (reply->type == REDIS_REPLY_STRING)
+				ret = reply->str;
+		}
+
+		freeReplyObject(reply);
+
+		return ret;
+	}
+
 	void SetUserConnection(const string& ID, const char* status)
 	{
 		string setCmd = "SET USER:" + ID + " " + status;
@@ -185,10 +243,25 @@ namespace Redis
 		freeReplyObject(reply);
 	}
 
-	void SetLocation(const string& ID, const string& x, const string& y)
+	void SetLocation(const string& ID, int x, int y, Type t = Type::E_ABSOLUTE)
 	{
-		string setCmd1 = "SET USER:" + ID + LOC_X + " " + x;
-		string setCmd2 = "SET USER:" + ID + LOC_Y + " " + y;
+		string setCmd1, setCmd2;
+		if (t == Type::E_ABSOLUTE)
+		{
+			setCmd1 = "SET USER:" + ID + LOC_X + " " + to_string(x);
+			setCmd2 = "SET USER:" + ID + LOC_Y + " " + to_string(y);
+		}
+		else
+		{
+			int origX = stoi(GetLocationX(ID));
+			int origY = stoi(GetLocationY(ID));
+
+			setCmd1 = "SET USER:" + ID + LOC_X + " " + to_string(origX + x);
+			setCmd2 = "SET USER:" + ID + LOC_Y + " " + to_string(origY + y);
+		}
+
+		cout << "setCmd1 : " << setCmd1 << " setCmd2 : " << setCmd2 << '\n';
+		
 		redisReply* reply; 
 		{
 			lock_guard<mutex> lg(redisMutex);
@@ -269,21 +342,7 @@ namespace Redis
 		freeReplyObject(reply);
 	}
 
-	string GetUserConnection(const string& ID)
-	{
-		string getCmd = "GET USER:" + ID;
-		redisReply* reply;
-		{
-			lock_guard<mutex> lg(redisMutex);
-
-			reply = (redisReply*)redisCommand(redis, getCmd.c_str());
-		}
-
-		if (reply->type == REDIS_REPLY_STRING)
-			return reply->str;
-
-		return "";
-	}
+	
 
 	void ExpireUser(const string& ID)
 	{
@@ -377,7 +436,7 @@ namespace Redis
 				cout << "New User : " << ID << '\n';
 				// redis¿¡ µî·Ï
 				SetUserConnection(ID, LOGINED);
-				SetLocation(ID, to_string(Rand::GetRandomLoc()), to_string(Rand::GetRandomLoc()));
+				SetLocation(ID, Rand::GetRandomLoc(), Rand::GetRandomLoc());
 				SetHp(ID, DEFAULT_HP);
 				SetStr(ID, DEFAULT_STR);
 				SetHpPotion(ID, DEFAULT_POTION_HP);
@@ -406,7 +465,7 @@ Client::~Client()
 string Logic::ProcessMove(const string& ID, const Job& job)
 {
 	cout << "ProcessMove is called\n";
-	Redis::SetLocation(ID, job.param1, job.param2);
+	Redis::SetLocation(ID, stoi(job.param1), stoi(job.param2), Redis::Type::E_RELATIVE);
 	return "";
 }
 
