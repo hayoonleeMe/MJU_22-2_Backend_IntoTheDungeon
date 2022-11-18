@@ -81,10 +81,7 @@ namespace Server
 		for (auto& entry : Server::activeClients)
 		{
 			if (entry.second->ID == ID)
-			{
-				closesocket(entry.first);
 				toDelete.push_back(entry.first);
-			}
 		}
 
 		// 지워야 하는 클라이언트들을 지운다.
@@ -92,7 +89,10 @@ namespace Server
 			lock_guard<mutex> lg(Server::activeClientsMutex);
 
 			for (auto& sock : toDelete)
+			{
+				closesocket(sock);
 				Server::activeClients.erase(sock);
+			}
 		}
 	}
 }
@@ -185,10 +185,10 @@ namespace Redis
 		freeReplyObject(reply);
 	}
 
-	void SetLocation(const string& ID, int x, int y)
+	void SetLocation(const string& ID, const string& x, const string& y)
 	{
-		string setCmd1 = "SET USER:" + ID + LOC_X + " " + to_string(x);
-		string setCmd2 = "SET USER:" + ID + LOC_Y + " " + to_string(y);
+		string setCmd1 = "SET USER:" + ID + LOC_X + " " + x;
+		string setCmd2 = "SET USER:" + ID + LOC_Y + " " + y;
 		redisReply* reply; 
 		{
 			lock_guard<mutex> lg(redisMutex);
@@ -204,7 +204,7 @@ namespace Redis
 
 		freeReplyObject(reply);
 	}
-
+	
 	void SetHp(const string& ID, int hp)
 	{
 		string setCmd = "SET USER:" + ID + HP + " " + to_string(hp);
@@ -377,7 +377,7 @@ namespace Redis
 				cout << "New User : " << ID << '\n';
 				// redis에 등록
 				SetUserConnection(ID, LOGINED);
-				SetLocation(ID, Rand::GetRandomLoc(), Rand::GetRandomLoc());
+				SetLocation(ID, to_string(Rand::GetRandomLoc()), to_string(Rand::GetRandomLoc()));
 				SetHp(ID, DEFAULT_HP);
 				SetStr(ID, DEFAULT_STR);
 				SetHpPotion(ID, DEFAULT_POTION_HP);
@@ -406,7 +406,7 @@ Client::~Client()
 string Logic::ProcessMove(const string& ID, const Job& job)
 {
 	cout << "ProcessMove is called\n";
-	Redis::SetLocation(ID, stoi(job.param1), stoi(job.param2));
+	Redis::SetLocation(ID, job.param1, job.param2);
 	return "";
 }
 
