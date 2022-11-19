@@ -505,7 +505,7 @@ string Logic::ProcessMove(const shared_ptr<Client>& client, const Job& job)
 {
 	cout << "ProcessMove is called\n";
 	Redis::SetLocation(client->ID, stoi(job.param1), stoi(job.param2), Redis::Type::E_RELATIVE);
-	// "유저가 (x, y)로 이동했다."
+
 	return "{\"text\":\"(" + Redis::GetLocationX(client->ID) + "," + Redis::GetLocationY(client->ID) + ")로 이동했다.\"}";
 }
 
@@ -535,7 +535,11 @@ string Logic::ProcessMonsters(const shared_ptr<Client>& client, const Job& job)
 string Logic::ProcessUsers(const shared_ptr<Client>& client, const Job& job)
 {
 	cout << "ProcessUsers is called\n";
+
+	// 클라이언트의 위치
 	string msg = "{\"text\":\"" + client->ID + ":(" + Redis::GetLocationX(client->ID) + "," + Redis::GetLocationY(client->ID) + ") ";
+
+	// 다른 클라이언트들의 위치
 	for (auto& entry : Server::activeClients)
 	{
 		if (entry.second->ID == client->ID)
@@ -544,13 +548,36 @@ string Logic::ProcessUsers(const shared_ptr<Client>& client, const Job& job)
 		msg += entry.second->ID + ":(" + Redis::GetLocationX(entry.second->ID) + "," + Redis::GetLocationY(entry.second->ID) + ") ";
 	}
 	msg += "\"}";
+
 	return msg;
 }
 
 string Logic::ProcessChat(const shared_ptr<Client>& client, const Job& job)
 {
 	cout << "ProcessChat is called\n";
-	return "";
+
+	SOCKET toSock = -1;
+
+	// 유저를 찾기
+	for (auto& entry : Server::activeClients)
+		if (entry.second->ID == job.param1)
+		{
+			toSock = entry.first;
+			break;
+		}
+
+	// 유저가 존재하지 않을 때
+	if (toSock == -1)
+		return "{\"text\":\"존재하지 않는 유저입니다.\"}";
+
+	// 유저가 존재할 때
+	{
+		lock_guard<mutex> lg(shouldSendPacketsMutex);
+
+		shouldSendPackets[toSock].push("{\"text\":\"" + job.param1 + "(으)로 부터 온 메시지 : " + job.param2 + "\"}");
+	}
+
+	return "{\"text\":\"메시지를 전송했습니다.\"}";
 }
 
 void Logic::InitHandlers()

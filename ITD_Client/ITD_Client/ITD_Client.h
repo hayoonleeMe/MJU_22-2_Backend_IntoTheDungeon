@@ -165,19 +165,12 @@ namespace Logic
 
 		string text = "{\"text\":\"" + input + "\"";
 
-		if (input == "move")
+		if (input == "move" || input == "chat")
 		{
 			string x, y;
 			cin >> x >> y;
 
 			text += ",\"first\":\"" + x + "\",\"second\":\"" + y + "\"";
-		}
-		else if (input == "chat")
-		{
-			string name, msg;
-			cin >> name >> msg;
-
-			text += ",\"first\":\"" + name + "\",\"second\":\"" + msg + "\"";
 		}
 		else if (input != "attack" && input != "monsters" && input != "users" && input != "bot")
 		{

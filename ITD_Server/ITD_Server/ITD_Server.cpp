@@ -152,7 +152,7 @@ bool processClient(shared_ptr<Client> client)
     // 받은 패킷에 대한 응답을 보낸다.
     if (client->sendTurn)
     {   
-        cout << "Send Start to " << client->ID << '\n';
+        cout << "Send Start to " << client->ID << '\n' << "send msg : " << client->sendPacket << '\n';
 
         if (client->lenCompleted == false) 
         {
