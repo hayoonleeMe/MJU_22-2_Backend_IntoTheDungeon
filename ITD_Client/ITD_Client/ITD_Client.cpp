@@ -51,7 +51,7 @@ int main()
         cout << text << endl;
 
         if (!Logic::SendData(text))
-            return 1;
+            Logic::ExitProgram();
     }
 
     // recvThread¸¦ joinÇÑ´Ù.

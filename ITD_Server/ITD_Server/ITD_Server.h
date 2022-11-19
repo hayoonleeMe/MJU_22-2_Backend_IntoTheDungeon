@@ -26,6 +26,8 @@ using namespace rapidjson;
 // ws2_32.lib 를 링크한다.
 #pragma comment(lib, "Ws2_32.lib")
 
+
+
 // 서버로 로그인된 유저 클라이언트
 class Client
 {
@@ -533,7 +535,16 @@ string Logic::ProcessMonsters(const shared_ptr<Client>& client, const Job& job)
 string Logic::ProcessUsers(const shared_ptr<Client>& client, const Job& job)
 {
 	cout << "ProcessUsers is called\n";
-	return "";
+	string msg = "{\"text\":\"" + client->ID + ":(" + Redis::GetLocationX(client->ID) + "," + Redis::GetLocationY(client->ID) + ") ";
+	for (auto& entry : Server::activeClients)
+	{
+		if (entry.second->ID == client->ID)
+			continue;
+
+		msg += entry.second->ID + ":(" + Redis::GetLocationX(entry.second->ID) + "," + Redis::GetLocationY(entry.second->ID) + ") ";
+	}
+	msg += "\"}";
+	return msg;
 }
 
 string Logic::ProcessChat(const shared_ptr<Client>& client, const Job& job)

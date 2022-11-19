@@ -117,6 +117,8 @@ bool processClient(shared_ptr<Client> client)
 
                 if (client->ID == "")
                     client->ID = string(document[Json::PARAM1].GetString());
+
+                client->sendPacket = "{\"text\":\"로그인 성공\"}";
             }
             // 이미 로그인된 유저로부터 명령어 받음
             else

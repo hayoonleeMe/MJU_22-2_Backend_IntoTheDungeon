@@ -146,9 +146,13 @@ namespace Logic
 			offset += r;
 		}
 
-		string text = string(recvBuf).substr(0, dataLen);
+		const string json = string(recvBuf).substr(0, dataLen);
 
-		cout << "Received text : " << text << '\n';
+		Document document;
+		document.Parse(json);
+
+		cout << "Received json : " << json << '\n';
+		cout << "Received text : " << document["text"].GetString() << '\n';
 
 		return true;
 	}
