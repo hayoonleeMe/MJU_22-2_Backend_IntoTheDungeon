@@ -26,7 +26,11 @@ using namespace rapidjson;
 // ws2_32.lib 를 링크한다.
 #pragma comment(lib, "Ws2_32.lib")
 
-
+struct Job
+{
+	string param1;
+	string param2;
+};
 
 // 서버로 로그인된 유저 클라이언트
 class Client
@@ -49,10 +53,25 @@ public:
 	int offset;
 };
 
-struct Job
+class Slime
 {
-	string param1;
-	string param2;
+	enum class PotionType
+	{
+		E_POTION_HP,
+		E_POTION_STR,
+	};
+
+public:
+	Slime();
+
+	void Attack(); 
+
+public:
+	int locX;
+	int locY;
+	int hp;
+	int str;
+	PotionType potionType;
 };
 
 typedef function<string(shared_ptr<Client>, Job)> Handler;
@@ -100,10 +119,21 @@ namespace Logic
 	static const int NUM_DUNGEON_X = 30;
 	static const int NUM_DUNGEON_Y = 30;
 
+	static const int MAX_NUM_OF_SLIME = 0;
+	static const int SLIME_MIN_HP = 5;
+	static const int SLIME_MAX_HP = 10;
+	static const int SLIME_MIN_STR = 3;	
+	static const int SLIME_MAX_STR = 5;	
+
+	static const int NUM_POTION = 2;
+
 	map<SOCKET, queue<string>> shouldSendPackets;
 	mutex shouldSendPacketsMutex;
 
 	map<string, Handler> handlers;
+
+	list<shared_ptr<Slime>> slimes;
+	mutex slimesMutex;
 
 	int Clamp(int value, int minValue, int maxValue)
 	{
@@ -118,6 +148,8 @@ namespace Logic
 	string ProcessUsers(const shared_ptr<Client>& client, const Job& job);
 	string ProcessChat(const shared_ptr<Client>& client, const Job& job);
 	void InitHandlers();
+
+	void SpawnSlime(int num);
 }
 
 // 난수 관련
@@ -126,11 +158,29 @@ namespace Rand
 	// random
 	random_device rd;
 	mt19937 gen(rd());
-	uniform_int_distribution<int> dis(0, Logic::NUM_DUNGEON_X - 1);
+	uniform_int_distribution<int> locDis(0, Logic::NUM_DUNGEON_X - 1);
+	uniform_int_distribution<int> slimeHpDis(Logic::SLIME_MIN_HP, Logic::SLIME_MAX_HP);
+	uniform_int_distribution<int> slimeStrDis(Logic::SLIME_MIN_STR, Logic::SLIME_MAX_STR);
+	uniform_int_distribution<int> potionTypeDis(0, Logic::NUM_POTION - 1);
 
 	int GetRandomLoc() 
 	{
-		return dis(gen);
+		return locDis(gen);
+	}
+
+	int GetRandomSlimeHp()
+	{
+		return slimeHpDis(gen);
+	}
+
+	int GetRandomSlimeStr()
+	{
+		return slimeStrDis(gen);
+	}
+
+	int GetRandomPotionType()
+	{
+		return potionTypeDis(gen);
 	}
 }
 
@@ -158,7 +208,7 @@ namespace Redis
 	redisContext* redis;
 	mutex redisMutex;
 
-	enum class Type
+	enum class F_Type
 	{
 		E_ABSOLUTE,
 		E_RELATIVE
@@ -268,10 +318,10 @@ namespace Redis
 		freeReplyObject(reply);
 	}
 
-	void SetLocation(const string& ID, int x, int y, Type t = Type::E_ABSOLUTE)
+	void SetLocation(const string& ID, int x, int y, F_Type t = F_Type::E_ABSOLUTE)
 	{
 		string setCmd1, setCmd2;
-		if (t == Type::E_ABSOLUTE)
+		if (t == F_Type::E_ABSOLUTE)
 		{
 			int newX = Logic::Clamp(x, 0, Logic::NUM_DUNGEON_X - 1);
 			int newY = Logic::Clamp(y, 0, Logic::NUM_DUNGEON_Y - 1);
@@ -306,10 +356,10 @@ namespace Redis
 		freeReplyObject(reply);
 	}
 	
-	void SetHp(const string& ID, int hp, Type t = Type::E_ABSOLUTE)
+	void SetHp(const string& ID, int hp, F_Type t = F_Type::E_ABSOLUTE)
 	{
 		string setCmd;
-		if (t == Type::E_ABSOLUTE)
+		if (t == F_Type::E_ABSOLUTE)
 		{
 			// TODO : HP의 하한, 상한을 정해야 함
 			int newHp = Logic::Clamp(hp, 0, 30);
@@ -487,6 +537,7 @@ namespace Redis
 	}
 }
 
+// class Client Definition
 Client::Client(SOCKET sock) : sock(sock), sendTurn(false), doingProc(false), lenCompleted(false), packetLen(0), offset(0), ID(""), sendPacket("")
 {}
 
@@ -501,10 +552,26 @@ Client::~Client()
 	cout << "Client destroyed. Socket: " << sock << endl;
 }
 
+// class Slime Definition
+Slime::Slime()
+{
+	locX = Rand::GetRandomLoc();
+	locY = Rand::GetRandomLoc();
+	hp = Rand::GetRandomSlimeHp();
+	str = Rand::GetRandomSlimeStr();
+	potionType = PotionType(Rand::GetRandomPotionType());
+	// for test
+	if (potionType == PotionType::E_POTION_HP)
+		cout << "slime has hp potion\n";
+	else
+		cout << "slime has str potion\n";
+}
+
+// namespace Logic Definition
 string Logic::ProcessMove(const shared_ptr<Client>& client, const Job& job)
 {
 	cout << "ProcessMove is called\n";
-	Redis::SetLocation(client->ID, stoi(job.param1), stoi(job.param2), Redis::Type::E_RELATIVE);
+	Redis::SetLocation(client->ID, stoi(job.param1), stoi(job.param2), Redis::F_Type::E_RELATIVE);
 
 	return "{\"text\":\"(" + Redis::GetLocationX(client->ID) + "," + Redis::GetLocationY(client->ID) + ")로 이동했다.\"}";
 }
@@ -587,6 +654,21 @@ void Logic::InitHandlers()
 	handlers[Json::MONSTERS] = ProcessMonsters;
 	handlers[Json::USERS] = ProcessUsers;
 	handlers[Json::CHAT] = ProcessChat;
+}
+
+void Logic::SpawnSlime(int num)
+{
+	if (num <= 0)
+		return;
+
+	{
+		lock_guard<mutex> lg(slimesMutex);
+
+		for (int i = 0; i < num; ++i)
+		{
+			slimes.push_back(shared_ptr<Slime>(new Slime()));
+		}
+	}
 }
 
 //bool isRepeat = false;

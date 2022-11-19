@@ -245,6 +245,40 @@ void workerThreadProc()
     }
 }
 
+void SlimeGenerateThread()
+{
+    int curNumOfSlime = Logic::MAX_NUM_OF_SLIME;
+
+    // 1분마다 슬라임 수가 10마리가 되도록 젠한다.
+    while (true)
+    {
+        Logic::SpawnSlime(Logic::MAX_NUM_OF_SLIME - curNumOfSlime);
+
+        this_thread::sleep_for(chrono::seconds(60));
+    }
+}
+
+void SlimeAttackCheckThread()
+{
+    pair<int, int> attackRange[] = {
+        {0, 0}, {-1, 0}, {-1, -1}, {0, -1}, {1, -1}, {1, 0}, {1, 1}, {0, 1}, {-1, 1} };
+
+    while (true)
+    {
+        for (auto& entry : Server::activeClients)
+        {
+            int clientLocX = stoi(Redis::GetLocationX(entry.second->ID));
+            int clientLocY = stoi(Redis::GetLocationY(entry.second->ID));
+
+            for (auto& slime : Logic::slimes)
+            {
+
+            }
+        }
+        
+    }
+}
+
 int main()
 {
     // hiredis 연결
@@ -275,12 +309,16 @@ int main()
     // passive socket 을 만들어준다.
     SOCKET passiveSock = createPassiveSocket();
 
+    // 작업을 처리하는 쓰레드를 추가한다.
     list<shared_ptr<thread> > threads;
     for (int i = 0; i < Server::NUM_WORKER_THREADS; ++i) 
     {
         shared_ptr<thread> workerThread(new thread(workerThreadProc));
         threads.push_back(workerThread);
     }
+    // 슬라임 생성 및 공격 작업을 처리하는 쓰레드를 추가한다.
+    threads.push_back(shared_ptr<thread>(new thread(SlimeGenerateThread)));
+    threads.push_back(shared_ptr<thread>(new thread(SlimeAttackCheckThread)));
 
     while (true) 
     {
