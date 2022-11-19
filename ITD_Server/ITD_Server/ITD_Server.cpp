@@ -129,11 +129,11 @@ bool processClient(shared_ptr<Client> client)
                     job.param2 = document[Json::PARAM2].GetString();
                 }
 
-                client->sendPacket = (Logic::handlers[text.GetString()])(client->ID, job);
+                client->sendPacket = (Logic::handlers[text.GetString()])(client, job);
             }
 
             // 보낼 패킷 설정 
-            client->sendTurn = true;
+            client->sendTurn = true;   
 
             // 다음 패킷을 위해 패킷 관련 정보를 초기화한다.
             client->lenCompleted = false;
@@ -237,7 +237,7 @@ void workerThreadProc()
             }
             else 
             {
-                client->doingRecv.store(false);
+                client->doingProc.store(false);
             }
         }
     }
@@ -302,14 +302,34 @@ int main()
             SOCKET activeSock = entry.first;
             shared_ptr<Client> client = entry.second;
 
-            if (client->doingRecv.load() == false) 
+            if (client->doingProc.load() == false) 
             {
                 FD_SET(activeSock, &readSet);
                 FD_SET(activeSock, &exceptionSet);
                 maxSock = max(maxSock, activeSock);
 
+                // 이 클라이언트가 데이터를 보낼 차례이면 jobQueue에 넣을 수 있도록 한다.
                 if (client->sendTurn)
                     ++sendCount;
+                // 이 클라이언트가 데이터를 보낼 차례가 아니면
+                else
+                {
+                     // 작업해야할 것이 아무것도 없는 클라이언트이므로 보내야하는 패킷이 있다면 보내도록 설정해준다.
+                    //if (Logic::shouldSendPackets.find(client->sock) != Logic::shouldSendPackets.end())
+                    if (!Logic::shouldSendPackets[client->sock].empty())
+                    {
+                        {
+                            lock_guard<mutex> lg(Logic::shouldSendPacketsMutex);
+
+                            client->sendPacket = Logic::shouldSendPackets[client->sock].front();
+                            Logic::shouldSendPackets[client->sock].pop();
+                            client->sendTurn = true;
+                            client->packetLen = htonl(client->sendPacket.length());
+
+                            sendCount++;
+                        }
+                    }
+                }
             }
         }
 
@@ -384,7 +404,7 @@ int main()
             if (FD_ISSET(activeSock, &readSet) || client->sendTurn) 
             {
                 // 이제 다시 select 대상이 되지 않도록 client 의 flag 를 켜준다.
-                client->doingRecv.store(true);
+                client->doingProc.store(true);
 
                 {
                     lock_guard<mutex> lg(Server::jobQueueMutex);

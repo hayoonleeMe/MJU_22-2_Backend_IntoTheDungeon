@@ -38,7 +38,7 @@ public:
 	SOCKET sock;  // 이 클라이언트의 active socket
 	string ID;	// 로그인된 유저의 ID
 
-	atomic<bool> doingRecv;
+	atomic<bool> doingProc;
 	bool sendTurn;
 	bool lenCompleted;
 	int packetLen;
@@ -51,15 +51,9 @@ struct Job
 {
 	string param1;
 	string param2;
-
-	Job()
-	{}
-	Job(string param1, string param2)
-		: param1(param1), param2(param2)
-	{}
 };
 
-typedef function<string(string, Job)> Handler;
+typedef function<string(shared_ptr<Client>, Job)> Handler;
 
 // 서버 구동 관련
 namespace Server
@@ -104,6 +98,9 @@ namespace Logic
 	static const int NUM_DUNGEON_X = 30;
 	static const int NUM_DUNGEON_Y = 30;
 
+	map<SOCKET, queue<string>> shouldSendPackets;
+	mutex shouldSendPacketsMutex;
+
 	map<string, Handler> handlers;
 
 	int Clamp(int value, int minValue, int maxValue)
@@ -113,11 +110,11 @@ namespace Logic
 		return result;
 	}
 
-	string ProcessMove(const string& ID, const Job& job);
-	string ProcessAttack(const string& ID, const Job& job);
-	string ProcessMonsters(const string& ID, const Job& job);
-	string ProcessUsers(const string& ID, const Job& job);
-	string ProcessChat(const string& ID, const Job& job);
+	string ProcessMove(const shared_ptr<Client>& client, const Job& job);
+	string ProcessAttack(const shared_ptr<Client>& client, const Job& job);
+	string ProcessMonsters(const shared_ptr<Client>& client, const Job& job);
+	string ProcessUsers(const shared_ptr<Client>& client, const Job& job);
+	string ProcessChat(const shared_ptr<Client>& client, const Job& job);
 	void InitHandlers();
 }
 
@@ -488,7 +485,7 @@ namespace Redis
 	}
 }
 
-Client::Client(SOCKET sock) : sock(sock), sendTurn(false), doingRecv(false), lenCompleted(false), packetLen(0), offset(0), ID(""), sendPacket("")
+Client::Client(SOCKET sock) : sock(sock), sendTurn(false), doingProc(false), lenCompleted(false), packetLen(0), offset(0), ID(""), sendPacket("")
 {}
 
 Client::~Client()
@@ -502,33 +499,44 @@ Client::~Client()
 	cout << "Client destroyed. Socket: " << sock << endl;
 }
 
-string Logic::ProcessMove(const string& ID, const Job& job)
+string Logic::ProcessMove(const shared_ptr<Client>& client, const Job& job)
 {
 	cout << "ProcessMove is called\n";
-	Redis::SetLocation(ID, stoi(job.param1), stoi(job.param2), Redis::Type::E_RELATIVE);
+	Redis::SetLocation(client->ID, stoi(job.param1), stoi(job.param2), Redis::Type::E_RELATIVE);
 	// "유저가 (x, y)로 이동했다."
-	return "{\"text\":\"(" + Redis::GetLocationX(ID) + "," + Redis::GetLocationY(ID) + ")로 이동했다.\"}";
+	return "{\"text\":\"(" + Redis::GetLocationX(client->ID) + "," + Redis::GetLocationY(client->ID) + ")로 이동했다.\"}";
 }
 
-string Logic::ProcessAttack(const string& ID, const Job& job)
+string Logic::ProcessAttack(const shared_ptr<Client>& client, const Job& job)
 {
 	cout << "ProcessAttack is called\n";
+	// TODO : 공격 실행
+	{
+		lock_guard<mutex> lg(shouldSendPacketsMutex);
+
+		for (auto& entry : Server::activeClients)
+		{
+			// ex) “핵노잼” 이 “슬라임” 을 공격해서 데미지 3을/를 가했습니다.
+			string msg;
+			shouldSendPackets[entry.first].push(msg);
+		}
+	}
 	return "";
 }
 
-string Logic::ProcessMonsters(const string& ID, const Job& job)
+string Logic::ProcessMonsters(const shared_ptr<Client>& client, const Job& job)
 {
 	cout << "ProcessMonsters is called\n";
 	return "";
 }
 
-string Logic::ProcessUsers(const string& ID, const Job& job)
+string Logic::ProcessUsers(const shared_ptr<Client>& client, const Job& job)
 {
 	cout << "ProcessUsers is called\n";
 	return "";
 }
 
-string Logic::ProcessChat(const string& ID, const Job& job)
+string Logic::ProcessChat(const shared_ptr<Client>& client, const Job& job)
 {
 	cout << "ProcessChat is called\n";
 	return "";
@@ -555,7 +563,7 @@ void Logic::InitHandlers()
 //
 //			for (auto& entry : Server::activeClients)
 //			{
-//				if (entry.second->doingRecv.load() == false)
+//				if (entry.second->doingProc.load() == false)
 //				{
 //					cout << "repeated send set : " << entry.first << '\n';
 //					entry.second->sendTurn = true;
