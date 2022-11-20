@@ -723,7 +723,15 @@ string Logic::ProcessAttack(const shared_ptr<Client>& client, const Job& job)
 string Logic::ProcessMonsters(const shared_ptr<Client>& client, const Job& job)
 {
 	cout << "ProcessMonsters is called\n";
-	return "";
+
+	string msg = "{\"text\":\"";
+	for (auto& slime : Logic::slimes)
+	{
+		msg += "Slime" + to_string(slime->index) + ":(" + to_string(slime->locX) + "," + to_string(slime->locY) + ") ";
+	}
+	msg += "\"}";
+
+	return msg;
 }
 
 string Logic::ProcessUsers(const shared_ptr<Client>& client, const Job& job)
