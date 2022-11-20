@@ -135,7 +135,10 @@ bool processClient(shared_ptr<Client> client)
             }
 
             // 보낼 패킷 설정 
-            client->sendTurn = true;   
+            if (client->sendPacket != "")
+                client->sendTurn = true;
+            else
+                client->sendTurn = false;
 
             // 다음 패킷을 위해 패킷 관련 정보를 초기화한다.
             client->lenCompleted = false;
@@ -247,35 +250,52 @@ void workerThreadProc()
 
 void SlimeGenerateThread()
 {
-    int curNumOfSlime = Logic::MAX_NUM_OF_SLIME;
+    cout << "In SlimeGenerateThread, " << Logic::MAX_NUM_OF_SLIME << " 마리 생성\n";
+    Logic::SpawnSlime(Logic::MAX_NUM_OF_SLIME);
 
-    // 1분마다 슬라임 수가 10마리가 되도록 젠한다.
-    while (true)
-    {
-        Logic::SpawnSlime(Logic::MAX_NUM_OF_SLIME - curNumOfSlime);
+    //int curNumOfSlime = 0;
 
-        this_thread::sleep_for(chrono::seconds(60));
-    }
+    //// 1분마다 슬라임 수가 10마리가 되도록 젠한다.
+    //while (true)
+    //{
+    //    cout << "In SlimeGenerateThread, " << Logic::MAX_NUM_OF_SLIME - curNumOfSlime << " 마리 생성\n";
+    //    Logic::SpawnSlime(Logic::MAX_NUM_OF_SLIME - curNumOfSlime);
+
+    //    this_thread::sleep_for(chrono::seconds(Logic::SLIME_GEN_PERIOD));
+    //}
 }
 
 void SlimeAttackCheckThread()
 {
-    pair<int, int> attackRange[] = {
-        {0, 0}, {-1, 0}, {-1, -1}, {0, -1}, {1, -1}, {1, 0}, {1, 1}, {0, 1}, {-1, 1} };
-
     while (true)
     {
-        for (auto& entry : Server::activeClients)
+        for (auto& slime : Logic::slimes)
         {
-            int clientLocX = stoi(Redis::GetLocationX(entry.second->ID));
-            int clientLocY = stoi(Redis::GetLocationY(entry.second->ID));
+            int slimeLocX = slime->locX;
+            int slimeLocY = slime->locY;
+            int slimeStr = slime->str;
 
-            for (auto& slime : Logic::slimes)
+            for (auto& entry : Server::activeClients)
             {
+                // 아직 로그인되지 않은 클라이언트라면 스킵
+                if (entry.second->ID == "")
+                    continue;
 
+                int userLocX = stoi(Redis::GetLocationX(entry.second->ID));
+                int userLocY = stoi(Redis::GetLocationY(entry.second->ID));
+
+                // 슬라임의 공격 범위 안에 유저가 있으면
+                if ((slimeLocX - userLocX <= Slime::MAX_X_ATTACK_RANGE && slimeLocX - userLocX >= Slime::MIN_X_ATTACK_RANGE) &&
+                    (slimeLocY - userLocY <= Slime::MAX_Y_ATTACK_RANGE && slimeLocY - userLocY >= Slime::MIN_Y_ATTACK_RANGE))
+                {
+                    entry.second->OnAttack(slime);
+                    string message = "{\"text\":\"슬라임" + to_string(slime->index) + " 이/가 " + entry.second->ID + " 을/를 공격해서 데미지 " + to_string(slime->str) + " 을/를 가했습니다.\"}";
+                    Logic::BroadcastToClients(message);
+                }
             }
         }
         
+        this_thread::sleep_for(chrono::seconds(Logic::SLIME_ATTACK_PERIOD));
     }
 }
 

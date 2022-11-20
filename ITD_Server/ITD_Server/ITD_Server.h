@@ -1,5 +1,7 @@
 #pragma once
 
+#define _CRT_SECURE_NO_WARNINGS
+
 #define RAPIDJSON_HAS_STDSTRING 1
 #include "rapidjson/document.h"
 
@@ -32,6 +34,8 @@ struct Job
 	string param2;
 };
 
+class Slime;
+
 // 서버로 로그인된 유저 클라이언트
 class Client
 {
@@ -39,6 +43,8 @@ public:
 	Client(SOCKET sock);
 
 	~Client();
+
+	void OnAttack(const shared_ptr<Slime>& slime);
 
 public:
 	SOCKET sock;  // 이 클라이언트의 active socket
@@ -51,6 +57,11 @@ public:
 	char packet[65536];  // 최대 64KB 로 패킷 사이즈 고정
 	string sendPacket;
 	int offset;
+
+	static const int MAX_X_ATTACK_RANGE = 1;
+	static const int MIN_X_ATTACK_RANGE = -1;
+	static const int MAX_Y_ATTACK_RANGE = 1;
+	static const int MIN_Y_ATTACK_RANGE = -1;
 };
 
 class Slime
@@ -64,15 +75,23 @@ class Slime
 public:
 	Slime();
 
-	void Attack(); 
+	void OnAttack(const shared_ptr<Client>& client); 
 
 public:
+	int index;
 	int locX;
 	int locY;
 	int hp;
 	int str;
 	PotionType potionType;
+
+	static int slimeIndex;
+	static const int MAX_X_ATTACK_RANGE = 1;
+	static const int MIN_X_ATTACK_RANGE = -1;
+	static const int MAX_Y_ATTACK_RANGE = 1;
+	static const int MIN_Y_ATTACK_RANGE = -1;
 };
+int Slime::slimeIndex = 0;
 
 typedef function<string(shared_ptr<Client>, Job)> Handler;
 
@@ -119,7 +138,9 @@ namespace Logic
 	static const int NUM_DUNGEON_X = 30;
 	static const int NUM_DUNGEON_Y = 30;
 
-	static const int MAX_NUM_OF_SLIME = 0;
+	static const int SLIME_GEN_PERIOD = 60;
+	static const int SLIME_ATTACK_PERIOD = 5;
+	static const int MAX_NUM_OF_SLIME = 10;
 	static const int SLIME_MIN_HP = 5;
 	static const int SLIME_MAX_HP = 10;
 	static const int SLIME_MIN_STR = 3;	
@@ -141,6 +162,8 @@ namespace Logic
 		result = min(maxValue, value);
 		return result;
 	}
+
+	void BroadcastToClients(const string& message, const string& exceptID = "");
 
 	string ProcessMove(const shared_ptr<Client>& client, const Job& job);
 	string ProcessAttack(const shared_ptr<Client>& client, const Job& job);
@@ -288,6 +311,24 @@ namespace Redis
 	{
 		string ret = "";
 		string getCmd = "GET USER:" + ID + HP;
+		redisReply* reply;
+		{
+			lock_guard<mutex> lg(redisMutex);
+
+			reply = (redisReply*)redisCommand(Redis::redis, getCmd.c_str());
+			if (reply->type == REDIS_REPLY_STRING)
+				ret = reply->str;
+		}
+
+		freeReplyObject(reply);
+
+		return ret;
+	}
+
+	string GetStr(const string& ID)
+	{
+		string ret = "";
+		string getCmd = "GET USER:" + ID + STR;
 		redisReply* reply;
 		{
 			lock_guard<mutex> lg(redisMutex);
@@ -552,22 +593,44 @@ Client::~Client()
 	cout << "Client destroyed. Socket: " << sock << endl;
 }
 
+void Client::OnAttack(const shared_ptr<Slime>& slime)
+{
+	cout << ID << " is On Attack by slime" << slime->index << '\n';
+}
+
 // class Slime Definition
 Slime::Slime()
 {
+	index = slimeIndex++;
 	locX = Rand::GetRandomLoc();
 	locY = Rand::GetRandomLoc();
 	hp = Rand::GetRandomSlimeHp();
 	str = Rand::GetRandomSlimeStr();
 	potionType = PotionType(Rand::GetRandomPotionType());
-	// for test
-	if (potionType == PotionType::E_POTION_HP)
-		cout << "slime has hp potion\n";
-	else
-		cout << "slime has str potion\n";
+}
+
+void Slime::OnAttack(const shared_ptr<Client>& client)
+{
+	cout << "slime" << index << " is On Attack by " << client->ID << '\n';
 }
 
 // namespace Logic Definition
+void Logic::BroadcastToClients(const string& message, const string& exceptUser)
+{
+	{
+		lock_guard<mutex> lg(shouldSendPacketsMutex);
+
+		for (auto& entry : Server::activeClients)
+		{
+			// 브로드캐스트에서 제외하고 싶은 유저가 있다면 스킵
+			if (entry.second->ID == exceptUser)
+				continue;
+
+			shouldSendPackets[entry.first].push(message);
+		}
+	}
+}
+
 string Logic::ProcessMove(const shared_ptr<Client>& client, const Job& job)
 {
 	cout << "ProcessMove is called\n";
@@ -579,17 +642,27 @@ string Logic::ProcessMove(const shared_ptr<Client>& client, const Job& job)
 string Logic::ProcessAttack(const shared_ptr<Client>& client, const Job& job)
 {
 	cout << "ProcessAttack is called\n";
-	// TODO : 공격 실행
-	{
-		lock_guard<mutex> lg(shouldSendPacketsMutex);
 
-		for (auto& entry : Server::activeClients)
+	int userLocX = stoi(Redis::GetLocationX(client->ID));
+	int userLocY = stoi(Redis::GetLocationY(client->ID));
+	int userStr = stoi(Redis::GetStr(client->ID));
+
+	for (auto& slime : slimes)
+	{
+		int slimeLocX = slime->locX;
+		int slimeLocY = slime->locY;
+
+		// 유저의 공격 범위 안에 슬라임이 있으면
+		if ((userLocX - slimeLocX <= Client::MAX_X_ATTACK_RANGE && userLocX - slimeLocX >= Client::MIN_X_ATTACK_RANGE) &&
+			(userLocY - slimeLocY <= Client::MAX_Y_ATTACK_RANGE && userLocY - slimeLocY >= Client::MIN_Y_ATTACK_RANGE))
 		{
-			// ex) “핵노잼” 이 “슬라임” 을 공격해서 데미지 3을/를 가했습니다.
-			string msg;
-			shouldSendPackets[entry.first].push(msg);
+			slime->OnAttack(client);
+			string message = "{\"text\":\"" + client->ID + " 이/가 슬라임" + to_string(slime->index) + " 을/를 공격해서 데미지 " + to_string(userStr) + " 을/를 가했습니다.\"}";
+			BroadcastToClients(message);
 		}
 	}
+
+	// ex) “핵노잼” 이 “슬라임” 을 공격해서 데미지 3을/를 가했습니다.
 	return "";
 }
 
