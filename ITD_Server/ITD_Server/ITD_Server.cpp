@@ -281,16 +281,31 @@ void SlimeAttackCheckThread()
                 if (entry.second->ID == "")
                     continue;
 
+                // 이미 죽은 클라이언트라면 스킵
+                if (entry.second->IsDead())
+                    continue;
+
                 int userLocX = stoi(Redis::GetLocationX(entry.second->ID));
                 int userLocY = stoi(Redis::GetLocationY(entry.second->ID));
 
                 // 슬라임의 공격 범위 안에 유저가 있으면
                 if ((slimeLocX - userLocX <= Slime::MAX_X_ATTACK_RANGE && slimeLocX - userLocX >= Slime::MIN_X_ATTACK_RANGE) &&
                     (slimeLocY - userLocY <= Slime::MAX_Y_ATTACK_RANGE && slimeLocY - userLocY >= Slime::MIN_Y_ATTACK_RANGE))
+                /*if ((slimeLocX - userLocX <= 29 && slimeLocX - userLocX >= -29) &&
+                    (slimeLocY - userLocY <= 29 && slimeLocY - userLocY >= -29))*/
                 {
+                    string attackMsg = "{\"text\":\"슬라임" + to_string(slime->index) + " 이/가 " + entry.second->ID + " 을/를 공격해서 데미지 " + to_string(slime->str) + " 을/를 가했습니다.\"}";
+                    Logic::BroadcastToClients(attackMsg);
+
                     entry.second->OnAttack(slime);
-                    string message = "{\"text\":\"슬라임" + to_string(slime->index) + " 이/가 " + entry.second->ID + " 을/를 공격해서 데미지 " + to_string(slime->str) + " 을/를 가했습니다.\"}";
-                    Logic::BroadcastToClients(message);
+                    // 공격 받은 클라이언트의 hp가 0일 때
+                    if (entry.second->IsDead())
+                    {
+                        // TODO : 클라이언트가 죽음을 알리는 메시지를 받을 때 그에따라 프로그램 종료 준비 필요
+                        string dieMsg = "{\"text\":\"" + entry.second->ID + " 이/가 슬라임" + to_string(slime->index) + " 에 의해 죽었습니다.\"}";
+                        cout << dieMsg << '\n';
+                        Logic::BroadcastToClients(dieMsg);
+                    }
                 }
             }
         }
@@ -375,17 +390,15 @@ int main()
                 else
                 {
                      // 작업해야할 것이 아무것도 없는 클라이언트이므로 보내야하는 패킷이 있다면 보내도록 설정해준다.
-                    //if (Logic::shouldSendPackets.find(client->sock) != Logic::shouldSendPackets.end())
                     if (!Logic::shouldSendPackets[client->sock].empty())
                     {
                         {
                             lock_guard<mutex> lg(Logic::shouldSendPacketsMutex);
 
                             client->sendPacket = Logic::shouldSendPackets[client->sock].front();
-                            Logic::shouldSendPackets[client->sock].pop();
+                            Logic::shouldSendPackets[client->sock].pop_front();
                             client->sendTurn = true;
                             client->packetLen = htonl(client->sendPacket.length());
-
                             sendCount++;
                         }
                     }
@@ -460,6 +473,21 @@ int main()
                 continue;
             }
 
+            // 해당 클라이언트가 보내야하는 메시지를 모두 보낸 상태이고 그 클라이언트가 죽었다면 없앤다.
+            if (client->sendTurn == false && Logic::shouldSendPackets[activeSock].empty() && client->IsDead())
+            {
+                // 소켓을 닫는다.
+                closesocket(client->sock);
+
+                // 해당 유저에 설정된 Redis의 모든 키를 제거한다.
+                Redis::DeleteAllUserKeys(client->ID);
+
+                // 지울 대상에 포함시킨다.
+                toDelete.push_back(activeSock);
+
+                continue;
+            }
+
             // 읽기 이벤트가 발생하는 소켓의 경우 recv() 를 처리한다.
             if (FD_ISSET(activeSock, &readSet) || client->sendTurn) 
             {
@@ -477,6 +505,17 @@ int main()
                         Server::jobQueueFilledCv.notify_one();
                     }
                 }
+            }
+        }
+
+        // 기존 접속에서 예정되어 있던 보내야하는 메시지들을 모두 없앤다.
+        {
+            lock_guard<mutex> lg(Logic::shouldSendPacketsMutex);
+
+            for (auto& closedSock : toDelete)
+            {
+                while (!Logic::shouldSendPackets[closedSock].empty())
+                    Logic::shouldSendPackets[closedSock].pop_front();
             }
         }
 

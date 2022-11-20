@@ -17,33 +17,6 @@ using namespace rapidjson;
 // ws2_32.lib 를 링크한다.
 #pragma comment(lib, "Ws2_32.lib")
 
-// 서버에서 보낸 응답
-class Response
-{
-public:
-	Response(SOCKET sock) : sock(sock), sendTurn(false), doingRecv(false), lenCompleted(false), packetLen(0), offset(0), ID(""), sendPacket("")
-	{}
-
-	~Response()
-	{
-		cout << "Response destroyed. Socket: " << sock << endl;
-	}
-
-public:
-	atomic<bool> doingRecv;
-
-	SOCKET sock;  // 이 클라이언트의 socket
-
-	bool sendTurn;
-	bool lenCompleted;
-	int packetLen;
-    char packet[65536];  // 최대 64KB 로 패킷 사이즈 고정
-	string sendPacket;
-	int offset;
-
-	string ID;	// 로그인된 유저의 ID
-};
-
 // 클라이언트 구동 관련
 namespace Client
 {

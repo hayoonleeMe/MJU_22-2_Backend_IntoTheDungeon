@@ -45,17 +45,18 @@ public:
 	~Client();
 
 	void OnAttack(const shared_ptr<Slime>& slime);
+	bool IsDead();
 
 public:
 	SOCKET sock;  // 이 클라이언트의 active socket
 	string ID;	// 로그인된 유저의 ID
 
 	atomic<bool> doingProc;
+	char packet[65536];  // 최대 64KB 로 패킷 사이즈 고정
+	string sendPacket;
 	bool sendTurn;
 	bool lenCompleted;
 	int packetLen;
-	char packet[65536];  // 최대 64KB 로 패킷 사이즈 고정
-	string sendPacket;
 	int offset;
 
 	static const int MAX_X_ATTACK_RANGE = 1;
@@ -75,7 +76,7 @@ class Slime
 public:
 	Slime();
 
-	void OnAttack(const shared_ptr<Client>& client); 
+	int OnAttack(const shared_ptr<Client>& client); 
 
 public:
 	int index;
@@ -108,28 +109,7 @@ namespace Server
 	condition_variable jobQueueFilledCv;
 
 	// ID를 가진 기존의 접속을 모두 종료한다.
-	void TerminateRemainUser(const string& ID)
-	{
-		list<SOCKET> toDelete;
-
-		// 기존의 접속된 클라이언트를 찾는다.
-		for (auto& entry : Server::activeClients)
-		{
-			if (entry.second->ID == ID)
-				toDelete.push_back(entry.first);
-		}
-
-		// 지워야 하는 클라이언트들을 지운다.
-		{
-			lock_guard<mutex> lg(Server::activeClientsMutex);
-
-			for (auto& sock : toDelete)
-			{
-				closesocket(sock);
-				Server::activeClients.erase(sock);
-			}
-		}
-	}
+	void TerminateRemainUser(const string& ID);
 }
 
 // 내부 로직 관련
@@ -148,7 +128,7 @@ namespace Logic
 
 	static const int NUM_POTION = 2;
 
-	map<SOCKET, queue<string>> shouldSendPackets;
+	map<SOCKET, list<string>> shouldSendPackets;
 	mutex shouldSendPacketsMutex;
 
 	map<string, Handler> handlers;
@@ -158,8 +138,7 @@ namespace Logic
 
 	int Clamp(int value, int minValue, int maxValue)
 	{
-		int result = max(minValue, value);
-		result = min(maxValue, value);
+		int result = min(max(minValue, value), maxValue);
 		return result;
 	}
 
@@ -576,6 +555,65 @@ namespace Redis
 
 		freeReplyObject(reply);
 	}
+	
+	// 한 유저의 모든 키를 삭제한다.
+	void DeleteAllUserKeys(const string& ID)
+	{
+		const int numOfCmd = 7;
+		string properties[] = { "", LOC_X, LOC_Y, HP, STR, POTION_HP, POTION_STR };
+
+		string delCmd = "DEL";
+		for (int i = 0; i < numOfCmd; ++i)
+		{
+			delCmd += " USER:" + ID + properties[i];
+		}
+
+		redisReply* reply;
+		{
+			lock_guard<mutex> lg(redisMutex);
+
+			reply = (redisReply*)redisCommand(redis, delCmd.c_str());
+		}
+		if (reply->type == REDIS_REPLY_ERROR)
+			cout << "Redis Command Error : " << delCmd << '\n';
+
+		freeReplyObject(reply);
+	}
+}
+
+// namespace Server Definition
+void Server::TerminateRemainUser(const string& ID)
+{
+	list<SOCKET> toDelete;
+
+	// 기존의 접속된 클라이언트를 찾는다.
+	for (auto& entry : Server::activeClients)
+	{
+		if (entry.second->ID == ID)
+			toDelete.push_back(entry.first);
+	}
+
+	// 기존 접속에서 예정되어 있던 보내야하는 메시지들을 모두 없앤다.
+	{
+		lock_guard<mutex> lg(Logic::shouldSendPacketsMutex);
+
+		for (auto& closedSock : toDelete)
+		{
+			while (!Logic::shouldSendPackets[closedSock].empty())
+				Logic::shouldSendPackets[closedSock].pop_front();
+		}
+	}
+
+	// 지워야 하는 클라이언트들을 지운다.
+	{
+		lock_guard<mutex> lg(Server::activeClientsMutex);
+
+		for (auto& closedSock : toDelete)
+		{
+			closesocket(closedSock);
+			Server::activeClients.erase(closedSock);
+		}
+	}
 }
 
 // class Client Definition
@@ -596,6 +634,18 @@ Client::~Client()
 void Client::OnAttack(const shared_ptr<Slime>& slime)
 {
 	cout << ID << " is On Attack by slime" << slime->index << '\n';
+
+	Redis::SetHp(ID, -1 * slime->str, Redis::F_Type::E_RELATIVE);
+
+	cout << "hayoon's remain hp : " << stoi(Redis::GetHp(ID)) << '\n';
+}
+
+bool Client::IsDead()
+{
+	if (ID == "")
+		return false;
+
+	return (stoi(Redis::GetHp(ID)) <= 0);
 }
 
 // class Slime Definition
@@ -609,9 +659,14 @@ Slime::Slime()
 	potionType = PotionType(Rand::GetRandomPotionType());
 }
 
-void Slime::OnAttack(const shared_ptr<Client>& client)
+int Slime::OnAttack(const shared_ptr<Client>& client)
 {
 	cout << "slime" << index << " is On Attack by " << client->ID << '\n';
+
+	int userStr = stoi(Redis::GetStr(client->ID));
+	hp = Logic::Clamp(hp - userStr, 0, 30);
+
+	return hp;
 }
 
 // namespace Logic Definition
@@ -626,7 +681,7 @@ void Logic::BroadcastToClients(const string& message, const string& exceptUser)
 			if (entry.second->ID == exceptUser)
 				continue;
 
-			shouldSendPackets[entry.first].push(message);
+			shouldSendPackets[entry.first].push_back(message);
 		}
 	}
 }
@@ -662,7 +717,6 @@ string Logic::ProcessAttack(const shared_ptr<Client>& client, const Job& job)
 		}
 	}
 
-	// ex) “핵노잼” 이 “슬라임” 을 공격해서 데미지 3을/를 가했습니다.
 	return "";
 }
 
@@ -714,7 +768,7 @@ string Logic::ProcessChat(const shared_ptr<Client>& client, const Job& job)
 	{
 		lock_guard<mutex> lg(shouldSendPacketsMutex);
 
-		shouldSendPackets[toSock].push("{\"text\":\"" + job.param1 + "(으)로 부터 온 메시지 : " + job.param2 + "\"}");
+		shouldSendPackets[toSock].push_back("{\"text\":\"" + job.param1 + "(으)로 부터 온 메시지 : " + job.param2 + "\"}");
 	}
 
 	return "{\"text\":\"메시지를 전송했습니다.\"}";
