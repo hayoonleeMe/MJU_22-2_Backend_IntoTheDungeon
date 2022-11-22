@@ -758,7 +758,7 @@ string Logic::ProcessMonsters(const shared_ptr<Client>& client, const Job& job)
 	string msg = "{\"text\":\"";
 	for (auto& slime : Logic::slimes)
 	{
-		msg += "Slime" + to_string(slime->index) + ":(" + to_string(slime->locX) + "," + to_string(slime->locY) + ") ";
+		msg += "Slime" + to_string(slime->index) + " : (" + to_string(slime->locX) + ", " + to_string(slime->locY) + ")\\r\\n";
 	}
 	msg += "\"}";
 
@@ -770,7 +770,7 @@ string Logic::ProcessUsers(const shared_ptr<Client>& client, const Job& job)
 	cout << "ProcessUsers is called\n";
 
 	// 클라이언트의 위치
-	string msg = "{\"text\":\"" + client->ID + ":(" + Redis::GetLocationX(client->ID) + "," + Redis::GetLocationY(client->ID) + ") ";
+	string msg = "{\"text\":\"" + client->ID + " : (" + Redis::GetLocationX(client->ID) + ", " + Redis::GetLocationY(client->ID) + ")\\r\\n";
 
 	// 다른 클라이언트들의 위치
 	for (auto& entry : Server::activeClients)
@@ -778,7 +778,7 @@ string Logic::ProcessUsers(const shared_ptr<Client>& client, const Job& job)
 		if (entry.second->ID == client->ID)
 			continue;
 
-		msg += entry.second->ID + ":(" + Redis::GetLocationX(entry.second->ID) + "," + Redis::GetLocationY(entry.second->ID) + ") ";
+		msg += entry.second->ID + " : (" + Redis::GetLocationX(entry.second->ID) + ", " + Redis::GetLocationY(entry.second->ID) + ")\\r\\n";
 	}
 	msg += "\"}";
 
