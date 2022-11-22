@@ -698,26 +698,57 @@ string Logic::ProcessAttack(const shared_ptr<Client>& client, const Job& job)
 {
 	cout << "ProcessAttack is called\n";
 
+	string ret = "";			// 반환할 문자열
+	bool canAttack = false;		// 공격할 수 있는지
+
+	// 유저의 스텟
 	int userLocX = stoi(Redis::GetLocationX(client->ID));
 	int userLocY = stoi(Redis::GetLocationY(client->ID));
 	int userStr = stoi(Redis::GetStr(client->ID));
 
-	for (auto& slime : slimes)
+	// 죽은 슬라임의 이터레이터를 저장하는 리스트
+	list<list<shared_ptr<Slime>>::iterator> deadSlimeIts;
+	for (list<shared_ptr<Slime>>::iterator it = slimes.begin(); it != slimes.end(); ++it)
 	{
-		int slimeLocX = slime->locX;
-		int slimeLocY = slime->locY;
+		// 슬라임의 스텟
+		int slimeLocX = (*it)->locX;
+		int slimeLocY = (*it)->locY;
 
 		// 유저의 공격 범위 안에 슬라임이 있으면
 		if ((userLocX - slimeLocX <= Client::MAX_X_ATTACK_RANGE && userLocX - slimeLocX >= Client::MIN_X_ATTACK_RANGE) &&
 			(userLocY - slimeLocY <= Client::MAX_Y_ATTACK_RANGE && userLocY - slimeLocY >= Client::MIN_Y_ATTACK_RANGE))
 		{
-			slime->OnAttack(client);
-			string message = "{\"text\":\"" + client->ID + " 이/가 슬라임" + to_string(slime->index) + " 을/를 공격해서 데미지 " + to_string(userStr) + " 을/를 가했습니다.\"}";
-			BroadcastToClients(message);
+			// 공격 가능
+			canAttack = true;
+
+			// 공격 메시지를 브로드캐스트한다.
+			string msg = "{\"text\":\"" + client->ID + " 이/가 슬라임" + to_string((*it)->index) + " 을/를 공격해서 데미지 " + to_string(userStr) + " 을/를 가했습니다.\"}";
+			BroadcastToClients(msg);
+
+			// 유저의 공격으로 슬라임이 죽었으면 삭제를 위해 deadSlimes 리스트에 넣는다.
+			if ((*it)->OnAttack(client) <= 0)
+			{
+				// 슬라임 사망 메시지를 브로드캐스트한다.
+				deadSlimeIts.push_back(it);
+				string dieMsg = "{\"text\":\"슬라임" + to_string((*it)->index) + " 이/가 " + client->ID + " 에 의해 죽었습니다.\"}";
+				BroadcastToClients(dieMsg);
+			}
 		}
 	}
 
-	return "";
+	// 죽은 슬라임을 없앤다.
+	{
+		lock_guard<mutex> lg(slimesMutex);
+
+		for (auto& deadSlimeIt : deadSlimeIts)
+			slimes.erase(deadSlimeIt);
+	}
+
+	// 공격할 대상이 없다면 클라이언트에게 알린다.
+	if (!canAttack)
+		ret = "{\"text\":\"공격할 대상이 없습니다.\"}";
+
+	return ret;
 }
 
 string Logic::ProcessMonsters(const shared_ptr<Client>& client, const Job& job)

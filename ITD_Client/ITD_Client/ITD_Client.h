@@ -141,6 +141,7 @@ namespace Logic
 		if (input == "move" || input == "chat")
 		{
 			string x, y;
+
 			cin >> x >> y;
 
 			text += ",\"first\":\"" + x + "\",\"second\":\"" + y + "\"";

@@ -253,16 +253,14 @@ void SlimeGenerateThread()
     cout << "In SlimeGenerateThread, " << Logic::MAX_NUM_OF_SLIME << " 마리 생성\n";
     Logic::SpawnSlime(Logic::MAX_NUM_OF_SLIME);
 
-    //int curNumOfSlime = 0;
+    // 1분마다 슬라임 수가 10마리가 되도록 젠한다.
+    while (true)
+    {
+        cout << "In SlimeGenerateThread, " << Logic::MAX_NUM_OF_SLIME - Logic::slimes.size() << " 마리 생성\n";
+        Logic::SpawnSlime(Logic::MAX_NUM_OF_SLIME - Logic::slimes.size());
 
-    //// 1분마다 슬라임 수가 10마리가 되도록 젠한다.
-    //while (true)
-    //{
-    //    cout << "In SlimeGenerateThread, " << Logic::MAX_NUM_OF_SLIME - curNumOfSlime << " 마리 생성\n";
-    //    Logic::SpawnSlime(Logic::MAX_NUM_OF_SLIME - curNumOfSlime);
-
-    //    this_thread::sleep_for(chrono::seconds(Logic::SLIME_GEN_PERIOD));
-    //}
+        this_thread::sleep_for(chrono::seconds(Logic::SLIME_GEN_PERIOD));
+    }
 }
 
 void SlimeAttackCheckThread()
@@ -303,7 +301,6 @@ void SlimeAttackCheckThread()
                     {
                         // TODO : 클라이언트가 죽음을 알리는 메시지를 받을 때 그에따라 프로그램 종료 준비 필요
                         string dieMsg = "{\"text\":\"" + entry.second->ID + " 이/가 슬라임" + to_string(slime->index) + " 에 의해 죽었습니다.\"}";
-                        cout << dieMsg << '\n';
                         Logic::BroadcastToClients(dieMsg);
                     }
                 }
