@@ -506,8 +506,11 @@ namespace Redis
 	}
 
 	// 유저를 redis에 등록한다.
-	void RegisterUser(const string& ID)
+	string RegisterUser(const string& ID)
 	{
+		// 반환할 문자열
+		string ret;
+
 		// 해당 ID로 로그인한 유저가 있는지 체크
 		string exitCmd = "Exists USER:" + ID;
 		redisReply* reply;
@@ -526,6 +529,7 @@ namespace Redis
 				if (strcmp(GetUserConnection(ID).c_str(), LOGINED) == 0)
 				{
 					cout << ID + " 이미 로그인 되어 있음\n";
+					ret = "{\"text\":\"기존의 접속을 종료하고 로그인했습니다.\"}";
 
 					// 기존 접속들을 강제 종료했으므로 redis의 key들은 expire 된다.
 					// 이를 다시 영구적인 값으로 되돌려 새로 로그인한 클라만이 사용하도록 한다.
@@ -536,6 +540,7 @@ namespace Redis
 				else if (strcmp(GetUserConnection(ID).c_str(), EXPIRED) == 0)
 				{
 					cout << ID + " 재접속함\n";
+					ret = "{\"text\":\"로그인에 성공했습니다.\"}";
 					PersistUser(ID);
 				}
 			}
@@ -543,6 +548,8 @@ namespace Redis
 			else
 			{
 				cout << "New User : " << ID << '\n';
+				ret = "{\"text\":\"로그인에 성공했습니다.\"}";
+
 				// redis에 등록
 				SetUserConnection(ID, LOGINED);
 				SetLocation(ID, Rand::GetRandomLoc(), Rand::GetRandomLoc());
@@ -554,6 +561,8 @@ namespace Redis
 		}
 
 		freeReplyObject(reply);
+
+		return ret;
 	}
 	
 	// 한 유저의 모든 키를 삭제한다.

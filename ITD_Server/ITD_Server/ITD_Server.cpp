@@ -113,12 +113,10 @@ bool processClient(shared_ptr<Client> client)
             // 첫 로그인
             if (strcmp(text.GetString(), Json::LOGIN) == 0)
             {
-                Redis::RegisterUser(string(document[Json::PARAM1].GetString()));
+                client->sendPacket = Redis::RegisterUser(string(document[Json::PARAM1].GetString()));
 
                 if (client->ID == "")
                     client->ID = string(document[Json::PARAM1].GetString());
-
-                client->sendPacket = "{\"text\":\"로그인 성공\"}";
             }
             // 이미 로그인된 유저로부터 명령어 받음
             else
