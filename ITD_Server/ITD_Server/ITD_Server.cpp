@@ -369,34 +369,38 @@ int main()
         maxSock = max(maxSock, passiveSock);
 
         // 현재 남아있는 active socket 들에 대해서도 모두 set 에 넣어준다.
-        for (auto& entry : Server::activeClients) 
         {
-            SOCKET activeSock = entry.first;
-            shared_ptr<Client> client = entry.second;
+            lock_guard<mutex> lg(Server::activeClientsMutex);
 
-            if (client->doingProc.load() == false) 
+            for (auto& entry : Server::activeClients)
             {
-                FD_SET(activeSock, &readSet);
-                FD_SET(activeSock, &exceptionSet);
-                maxSock = max(maxSock, activeSock);
+                SOCKET activeSock = entry.first;
+                shared_ptr<Client> client = entry.second;
 
-                // 이 클라이언트가 데이터를 보낼 차례이면 jobQueue에 넣을 수 있도록 한다.
-                if (client->sendTurn)
-                    ++sendCount;
-                // 이 클라이언트가 데이터를 보낼 차례가 아니면
-                else
+                if (client->doingProc.load() == false)
                 {
-                     // 작업해야할 것이 아무것도 없는 클라이언트이므로 보내야하는 패킷이 있다면 보내도록 설정해준다.
-                    if (!Logic::shouldSendPackets[client->sock].empty())
-                    {
-                        {
-                            lock_guard<mutex> lg(Logic::shouldSendPacketsMutex);
+                    FD_SET(activeSock, &readSet);
+                    FD_SET(activeSock, &exceptionSet);
+                    maxSock = max(maxSock, activeSock);
 
-                            client->sendPacket = Logic::shouldSendPackets[client->sock].front();
-                            Logic::shouldSendPackets[client->sock].pop_front();
-                            client->sendTurn = true;
-                            client->packetLen = htonl(client->sendPacket.length());
-                            sendCount++;
+                    // 이 클라이언트가 데이터를 보낼 차례이면 jobQueue에 넣을 수 있도록 한다.
+                    if (client->sendTurn)
+                        ++sendCount;
+                    // 이 클라이언트가 데이터를 보낼 차례가 아니면
+                    else
+                    {
+                        // 작업해야할 것이 아무것도 없는 클라이언트이므로 보내야하는 패킷이 있다면 보내도록 설정해준다.
+                        if (!Logic::shouldSendPackets[client->sock].empty())
+                        {
+                            {
+                                lock_guard<mutex> lg(Logic::shouldSendPacketsMutex);
+
+                                client->sendPacket = Logic::shouldSendPackets[client->sock].front();
+                                Logic::shouldSendPackets[client->sock].pop_front();
+                                client->sendTurn = true;
+                                client->packetLen = htonl(client->sendPacket.length());
+                                sendCount++;
+                            }
                         }
                     }
                 }
@@ -451,55 +455,59 @@ int main()
 
         // 오류 이벤트가 발생하는 소켓의 클라이언트는 제거한다.
         list<SOCKET> toDelete;
-        for (auto& entry : Server::activeClients)
         {
-            SOCKET activeSock = entry.first;
-            shared_ptr<Client> client = entry.second;
+            lock_guard<mutex> lg(Server::activeClientsMutex);
 
-            if (FD_ISSET(activeSock, &exceptionSet)) 
+            for (auto& entry : Server::activeClients)
             {
-                cerr << "Exception on socket " << activeSock << endl;
+                SOCKET activeSock = entry.first;
+                shared_ptr<Client> client = entry.second;
 
-                // 소켓을 닫는다.
-                closesocket(activeSock);
-
-                // 지울 대상에 포함시킨다.
-                toDelete.push_back(activeSock);
-
-                // 소켓을 닫은 경우 더 이상 처리할 필요가 없으니 아래 read 작업은 하지 않는다.
-                continue;
-            }
-
-            // 해당 클라이언트가 보내야하는 메시지를 모두 보낸 상태이고 그 클라이언트가 죽었다면 없앤다.
-            if (client->sendTurn == false && Logic::shouldSendPackets[activeSock].empty() && client->IsDead())
-            {
-                // 소켓을 닫는다.
-                closesocket(client->sock);
-
-                // 해당 유저에 설정된 Redis의 모든 키를 제거한다.
-                Redis::DeleteAllUserKeys(client->ID);
-
-                // 지울 대상에 포함시킨다.
-                toDelete.push_back(activeSock);
-
-                continue;
-            }
-
-            // 읽기 이벤트가 발생하는 소켓의 경우 recv() 를 처리한다.
-            if (FD_ISSET(activeSock, &readSet) || client->sendTurn) 
-            {
-                // 이제 다시 select 대상이 되지 않도록 client 의 flag 를 켜준다.
-                client->doingProc.store(true);
-
+                if (FD_ISSET(activeSock, &exceptionSet))
                 {
-                    lock_guard<mutex> lg(Server::jobQueueMutex);
+                    cerr << "Exception on socket " << activeSock << endl;
 
-                    bool wasEmpty = Server::jobQueue.empty();
-                    Server::jobQueue.push(client);
+                    // 소켓을 닫는다.
+                    closesocket(activeSock);
 
-                    // 무의미하게 CV 를 notify하지 않도록 큐의 길이가 0에서 1이 되는 순간 notify 를 하도록 하자.
-                    if (wasEmpty) {
-                        Server::jobQueueFilledCv.notify_one();
+                    // 지울 대상에 포함시킨다.
+                    toDelete.push_back(activeSock);
+
+                    // 소켓을 닫은 경우 더 이상 처리할 필요가 없으니 아래 read 작업은 하지 않는다.
+                    continue;
+                }
+
+                // 해당 클라이언트가 보내야하는 메시지를 모두 보낸 상태이고 그 클라이언트가 죽었다면 없앤다.
+                if (client->sendTurn == false && Logic::shouldSendPackets[activeSock].empty() && client->IsDead())
+                {
+                    // 소켓을 닫는다.
+                    closesocket(client->sock);
+
+                    // 해당 유저에 설정된 Redis의 모든 키를 제거한다.
+                    Redis::DeleteAllUserKeys(client->ID);
+
+                    // 지울 대상에 포함시킨다.
+                    toDelete.push_back(activeSock);
+
+                    continue;
+                }
+
+                // 읽기 이벤트가 발생하는 소켓의 경우 recv() 를 처리한다.
+                if (FD_ISSET(activeSock, &readSet) || client->sendTurn)
+                {
+                    // 이제 다시 select 대상이 되지 않도록 client 의 flag 를 켜준다.
+                    client->doingProc.store(true);
+
+                    {
+                        lock_guard<mutex> lg(Server::jobQueueMutex);
+
+                        bool wasEmpty = Server::jobQueue.empty();
+                        Server::jobQueue.push(client);
+
+                        // 무의미하게 CV 를 notify하지 않도록 큐의 길이가 0에서 1이 되는 순간 notify 를 하도록 하자.
+                        if (wasEmpty) {
+                            Server::jobQueueFilledCv.notify_one();
+                        }
                     }
                 }
             }
