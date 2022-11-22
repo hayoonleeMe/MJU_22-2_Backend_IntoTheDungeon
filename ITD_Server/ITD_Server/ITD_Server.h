@@ -189,18 +189,89 @@ namespace Rand
 // json 관련
 namespace Json
 {
-	// json key
+	// json recv key
 	static const char* TEXT = "text";
 	static const char* PARAM1 = "first";
 	static const char* PARAM2 = "second";
 
-	// json value
+	// json recv value
 	static const char* LOGIN = "login";
 	static const char* MOVE = "move";
 	static const char* ATTACK = "attack";
 	static const char* MONSTERS = "monsters";
 	static const char* USERS = "users";
 	static const char* CHAT = "chat";
+
+	// Slime attack to user
+	string GetSlimeAttackUserJson(int slimeIndex, const string& userID, int slimeStr)
+	{
+		return "{\"text\":\"슬라임" + to_string(slimeIndex) + " 이/가 " + userID + " 을/를 공격해서 데미지 " + to_string(slimeStr) + " 을/를 가했습니다.\"}";
+	}
+
+	// User attack to slime
+	string GetUserAttackSlimeJson(const string& userID, int slimeIndex, int userStr)
+	{
+		return "{\"text\":\"" + userID + " 이/가 슬라임" + to_string(slimeIndex) + " 을/를 공격해서 데미지 " + to_string(userStr) + " 을/를 가했습니다.\"}";
+	}
+
+	// Slime die
+	string GetSlimeDieJson(int slimeIndex, const string& userID)
+	{
+		return "{\"text\":\"슬라임" + to_string(slimeIndex) + " 이/가 " + userID + " 에 의해 죽었습니다.\"}";
+	}
+
+	// User die
+	string GetUserDieJson(const string& userID, int slimeIndex, const SOCKET& sock)
+	{
+		return "{\"text\":\"" + userID + " 이/가 슬라임" + to_string(slimeIndex) + " 에 의해 죽었습니다.\",\"first\":" + to_string(sock) + "}";
+	}
+
+	// Move response
+	string GetMoveRespJson(const string& userID)
+	{
+		return "{\"text\":\"(" + Redis::GetLocationX(userID) + "," + Redis::GetLocationY(userID) + ")로 이동했다.\"}";
+	}
+
+	// Text only
+	string GetTextOnlyJson(const string& text)
+	{
+		return "{\"text\":\"" + text + "\"}";
+	}
+
+	// Users response
+	string GetUsersRespJson(const string& userID)
+	{
+		string msg = "{\"text\":\"" + userID + " : (" + Redis::GetLocationX(userID) + ", " + Redis::GetLocationY(userID) + ")\\r\\n";
+		// 다른 클라이언트들의 위치
+		for (auto& entry : Server::activeClients)
+		{
+			if (entry.second->ID == userID)
+				continue;
+			msg += entry.second->ID + " : (" + Redis::GetLocationX(entry.second->ID) + ", " + Redis::GetLocationY(entry.second->ID) + ")\\r\\n";
+		}
+		msg += "\"}";
+
+		return msg;
+	}
+
+	// Monsters response
+	string GetMonstersRespJson()
+	{
+		string msg = "{\"text\":\"";
+		for (auto& slime : Logic::slimes)
+		{
+			msg += "Slime" + to_string(slime->index) + " : (" + to_string(slime->locX) + ", " + to_string(slime->locY) + ")\\r\\n";
+		}
+		msg += "\"}";
+
+		return msg;
+	}
+
+	// Chat response
+	string GetChatRespJson(const string& userID, const string& text)
+	{
+		return "{\"text\":\"" + userID + "(으)로 부터 온 메시지 : " + text + "\"}";
+	}
 }
 
 // redis 관련
@@ -529,7 +600,7 @@ namespace Redis
 				if (strcmp(GetUserConnection(ID).c_str(), LOGINED) == 0)
 				{
 					cout << ID + " 이미 로그인 되어 있음\n";
-					ret = "{\"text\":\"기존의 접속을 종료하고 로그인했습니다.\"}";
+					ret = Json::GetTextOnlyJson("기존의 접속을 종료하고 로그인했습니다.");
 
 					// 기존 접속들을 강제 종료했으므로 redis의 key들은 expire 된다.
 					// 이를 다시 영구적인 값으로 되돌려 새로 로그인한 클라만이 사용하도록 한다.
@@ -540,7 +611,7 @@ namespace Redis
 				else if (strcmp(GetUserConnection(ID).c_str(), EXPIRED) == 0)
 				{
 					cout << ID + " 재접속함\n";
-					ret = "{\"text\":\"로그인에 성공했습니다.\"}";
+					ret = Json::GetTextOnlyJson("로그인에 성공했습니다.");
 					PersistUser(ID);
 				}
 			}
@@ -548,7 +619,7 @@ namespace Redis
 			else
 			{
 				cout << "New User : " << ID << '\n';
-				ret = "{\"text\":\"로그인에 성공했습니다.\"}";
+				ret = Json::GetTextOnlyJson("로그인에 성공했습니다.");
 
 				// redis에 등록
 				SetUserConnection(ID, LOGINED);
@@ -700,7 +771,7 @@ string Logic::ProcessMove(const shared_ptr<Client>& client, const Job& job)
 	cout << "ProcessMove is called\n";
 	Redis::SetLocation(client->ID, stoi(job.param1), stoi(job.param2), Redis::F_Type::E_RELATIVE);
 
-	return "{\"text\":\"(" + Redis::GetLocationX(client->ID) + "," + Redis::GetLocationY(client->ID) + ")로 이동했다.\"}";
+	return Json::GetMoveRespJson(client->ID);
 }
 
 string Logic::ProcessAttack(const shared_ptr<Client>& client, const Job& job)
@@ -731,7 +802,7 @@ string Logic::ProcessAttack(const shared_ptr<Client>& client, const Job& job)
 			canAttack = true;
 
 			// 공격 메시지를 브로드캐스트한다.
-			string msg = "{\"text\":\"" + client->ID + " 이/가 슬라임" + to_string((*it)->index) + " 을/를 공격해서 데미지 " + to_string(userStr) + " 을/를 가했습니다.\"}";
+			string msg = Json::GetUserAttackSlimeJson(client->ID, (*it)->index, userStr);
 			BroadcastToClients(msg);
 
 			// 유저의 공격으로 슬라임이 죽었으면 삭제를 위해 deadSlimes 리스트에 넣는다.
@@ -739,7 +810,7 @@ string Logic::ProcessAttack(const shared_ptr<Client>& client, const Job& job)
 			{
 				// 슬라임 사망 메시지를 브로드캐스트한다.
 				deadSlimeIts.push_back(it);
-				string dieMsg = "{\"text\":\"슬라임" + to_string((*it)->index) + " 이/가 " + client->ID + " 에 의해 죽었습니다.\"}";
+				string dieMsg = Json::GetSlimeDieJson((*it)->index, client->ID);
 				BroadcastToClients(dieMsg);
 			}
 		}
@@ -755,7 +826,7 @@ string Logic::ProcessAttack(const shared_ptr<Client>& client, const Job& job)
 
 	// 공격할 대상이 없다면 클라이언트에게 알린다.
 	if (!canAttack)
-		ret = "{\"text\":\"공격할 대상이 없습니다.\"}";
+		ret = Json::GetTextOnlyJson("공격할 대상이 없습니다.");
 
 	return ret;
 }
@@ -764,14 +835,7 @@ string Logic::ProcessMonsters(const shared_ptr<Client>& client, const Job& job)
 {
 	cout << "ProcessMonsters is called\n";
 
-	string msg = "{\"text\":\"";
-	for (auto& slime : Logic::slimes)
-	{
-		msg += "Slime" + to_string(slime->index) + " : (" + to_string(slime->locX) + ", " + to_string(slime->locY) + ")\\r\\n";
-	}
-	msg += "\"}";
-
-	return msg;
+	return Json::GetMonstersRespJson();
 }
 
 string Logic::ProcessUsers(const shared_ptr<Client>& client, const Job& job)
@@ -779,19 +843,7 @@ string Logic::ProcessUsers(const shared_ptr<Client>& client, const Job& job)
 	cout << "ProcessUsers is called\n";
 
 	// 클라이언트의 위치
-	string msg = "{\"text\":\"" + client->ID + " : (" + Redis::GetLocationX(client->ID) + ", " + Redis::GetLocationY(client->ID) + ")\\r\\n";
-
-	// 다른 클라이언트들의 위치
-	for (auto& entry : Server::activeClients)
-	{
-		if (entry.second->ID == client->ID)
-			continue;
-
-		msg += entry.second->ID + " : (" + Redis::GetLocationX(entry.second->ID) + ", " + Redis::GetLocationY(entry.second->ID) + ")\\r\\n";
-	}
-	msg += "\"}";
-
-	return msg;
+	return Json::GetUsersRespJson(client->ID);
 }
 
 string Logic::ProcessChat(const shared_ptr<Client>& client, const Job& job)
@@ -810,16 +862,16 @@ string Logic::ProcessChat(const shared_ptr<Client>& client, const Job& job)
 
 	// 유저가 존재하지 않을 때
 	if (toSock == -1)
-		return "{\"text\":\"존재하지 않는 유저입니다.\"}";
+		return Json::GetTextOnlyJson("존재하지 않는 유저입니다.");
 
 	// 유저가 존재할 때
 	{
 		lock_guard<mutex> lg(shouldSendPacketsMutex);
 
-		shouldSendPackets[toSock].push_back("{\"text\":\"" + job.param1 + "(으)로 부터 온 메시지 : " + job.param2 + "\"}");
+		shouldSendPackets[toSock].push_back(Json::GetChatRespJson(job.param1, job.param2));
 	}
 
-	return "{\"text\":\"메시지를 전송했습니다.\"}";
+	return Json::GetTextOnlyJson("메시지를 전송했습니다.");
 }
 
 void Logic::InitHandlers()

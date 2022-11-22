@@ -290,16 +290,14 @@ void SlimeAttackCheckThread()
                 /*if ((slimeLocX - userLocX <= 29 && slimeLocX - userLocX >= -29) &&
                     (slimeLocY - userLocY <= 29 && slimeLocY - userLocY >= -29))*/
                 {
-                    string attackMsg = "{\"text\":\"슬라임" + to_string(slime->index) + " 이/가 " + entry.second->ID + " 을/를 공격해서 데미지 " + to_string(slime->str) + " 을/를 가했습니다.\"}";
-                    Logic::BroadcastToClients(attackMsg);
+                    Logic::BroadcastToClients(Json::GetSlimeAttackUserJson(slime->index, entry.second->ID, slime->str));
 
                     entry.second->OnAttack(slime);
                     // 공격 받은 클라이언트의 hp가 0일 때
                     if (entry.second->IsDead())
                     {
                         // TODO : 클라이언트가 죽음을 알리는 메시지를 받을 때 그에따라 프로그램 종료 준비 필요
-                        string dieMsg = "{\"text\":\"" + entry.second->ID + " 이/가 슬라임" + to_string(slime->index) + " 에 의해 죽었습니다.\"}";
-                        Logic::BroadcastToClients(dieMsg);
+                        Logic::BroadcastToClients(Json::GetUserDieJson(entry.second->ID, slime->index, entry.first));
                     }
                 }
             }
