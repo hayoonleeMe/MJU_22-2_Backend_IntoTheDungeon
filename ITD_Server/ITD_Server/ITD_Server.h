@@ -90,14 +90,9 @@ namespace Logic
 	static const int NUM_DUNGEON_Y = 30;
 
 	static const int SLIME_GEN_PERIOD = 60;
-	static const int SLIME_ATTACK_PERIOD = 5;
 	static const int MAX_NUM_OF_SLIME = 10;
-	static const int SLIME_MIN_HP = 5;
-	static const int SLIME_MAX_HP = 10;
-	static const int SLIME_MIN_STR = 3;	
-	static const int SLIME_MAX_STR = 5;	
 
-	static const int NUM_POTION = 2;
+	static const int NUM_POTION_TYPE = 2;
 
 	enum class PotionType
 	{
@@ -144,6 +139,8 @@ public:
 
 	int OnAttack(const shared_ptr<Client>& client);
 
+	bool IsDead();
+
 public:
 	int index;
 	int locX;
@@ -157,6 +154,11 @@ public:
 	static const int MIN_X_ATTACK_RANGE = -1;
 	static const int MAX_Y_ATTACK_RANGE = 1;
 	static const int MIN_Y_ATTACK_RANGE = -1;
+	static const int ATTACK_PERIOD = 5;
+	static const int MIN_HP = 5;
+	static const int MAX_HP = 10;
+	static const int MIN_STR = 3;
+	static const int MAX_STR = 5;
 };
 int Slime::slimeIndex = 0;
 
@@ -167,9 +169,9 @@ namespace Rand
 	random_device rd;
 	mt19937 gen(rd());
 	uniform_int_distribution<int> locDis(0, Logic::NUM_DUNGEON_X - 1);
-	uniform_int_distribution<int> slimeHpDis(Logic::SLIME_MIN_HP, Logic::SLIME_MAX_HP);
-	uniform_int_distribution<int> slimeStrDis(Logic::SLIME_MIN_STR, Logic::SLIME_MAX_STR);
-	uniform_int_distribution<int> potionTypeDis(0, Logic::NUM_POTION - 1);
+	uniform_int_distribution<int> slimeHpDis(Slime::MIN_HP, Slime::MAX_HP);
+	uniform_int_distribution<int> slimeStrDis(Slime::MIN_STR, Slime::MAX_STR);
+	uniform_int_distribution<int> potionTypeDis(0, Logic::NUM_POTION_TYPE - 1);
 
 	int GetRandomLoc() 
 	{
@@ -680,6 +682,7 @@ namespace Redis
 	}
 }
 
+
 // namespace Server Definition
 void Server::TerminateRemainUser(const string& ID)
 {
@@ -715,6 +718,7 @@ void Server::TerminateRemainUser(const string& ID)
 	}
 }
 
+
 // class Client Definition
 Client::Client(SOCKET sock) : sock(sock), sendTurn(false), doingProc(false), lenCompleted(false), packetLen(0), offset(0), ID(""), sendPacket("")
 {}
@@ -741,32 +745,13 @@ void Client::OnAttack(const shared_ptr<Slime>& slime)
 
 bool Client::IsDead()
 {
+	// 아직 등록되지 않은 유저이면 스킵
 	if (ID == "")
 		return false;
 
 	return (stoi(Redis::GetHp(ID)) <= 0);
 }
 
-// class Slime Definition
-Slime::Slime()
-{
-	index = slimeIndex++;
-	locX = Rand::GetRandomLoc();
-	locY = Rand::GetRandomLoc();
-	hp = Rand::GetRandomSlimeHp();
-	str = Rand::GetRandomSlimeStr();
-	potionType = Logic::PotionType(Rand::GetRandomPotionType());
-}
-
-int Slime::OnAttack(const shared_ptr<Client>& client)
-{
-	cout << "slime" << index << " is On Attack by " << client->ID << '\n';
-
-	int userStr = stoi(Redis::GetStr(client->ID));
-	hp = Logic::Clamp(hp - userStr, 0, 30);
-
-	return hp;
-}
 
 // namespace Logic Definition
 void Logic::BroadcastToClients(const string& message, const string& exceptUser)
@@ -809,6 +794,10 @@ string Logic::ProcessAttack(const shared_ptr<Client>& client, const Job& job)
 	list<list<shared_ptr<Slime>>::iterator> deadSlimeIts;
 	for (list<shared_ptr<Slime>>::iterator it = slimes.begin(); it != slimes.end(); ++it)
 	{
+		// 이미 죽은 슬라임이면 스킵
+		if ((*it)->IsDead())
+			continue;
+
 		// 슬라임의 스텟
 		int slimeLocX = (*it)->locX;
 		int slimeLocY = (*it)->locY;
@@ -927,6 +916,33 @@ void Logic::SpawnSlime(int num)
 			slimes.push_back(shared_ptr<Slime>(new Slime()));
 		}
 	}
+}
+
+
+// class Slime Definition
+Slime::Slime()
+{
+	index = slimeIndex++;
+	locX = Rand::GetRandomLoc();
+	locY = Rand::GetRandomLoc();
+	hp = Rand::GetRandomSlimeHp();
+	str = Rand::GetRandomSlimeStr();
+	potionType = Logic::PotionType(Rand::GetRandomPotionType());
+}
+
+int Slime::OnAttack(const shared_ptr<Client>& client)
+{
+	cout << "slime" << index << " is On Attack by " << client->ID << '\n';
+
+	int userStr = stoi(Redis::GetStr(client->ID));
+	hp = Logic::Clamp(hp - userStr, 0, MAX_HP);
+
+	return hp;
+}
+
+bool Slime::IsDead()
+{
+	return (hp <= 0);
 }
 
 // namespace Json definition

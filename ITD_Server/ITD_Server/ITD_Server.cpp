@@ -303,7 +303,7 @@ void SlimeAttackCheckThread()
             }
         }
         
-        this_thread::sleep_for(chrono::seconds(Logic::SLIME_ATTACK_PERIOD));
+        this_thread::sleep_for(chrono::seconds(Slime::ATTACK_PERIOD));
     }
 }
 
