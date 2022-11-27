@@ -76,6 +76,11 @@ class Slime
 public:
 	Slime();
 
+	~Slime()
+	{
+		cout << "Slime" << index << " is dead\n";
+	}
+
 	int OnAttack(const shared_ptr<Client>& client); 
 
 public:
@@ -203,75 +208,31 @@ namespace Json
 	static const char* CHAT = "chat";
 
 	// Slime attack to user
-	string GetSlimeAttackUserJson(int slimeIndex, const string& userID, int slimeStr)
-	{
-		return "{\"text\":\"슬라임" + to_string(slimeIndex) + " 이/가 " + userID + " 을/를 공격해서 데미지 " + to_string(slimeStr) + " 을/를 가했습니다.\"}";
-	}
+	string GetSlimeAttackUserJson(int slimeIndex, const string& userID, int slimeStr);
 
 	// User attack to slime
-	string GetUserAttackSlimeJson(const string& userID, int slimeIndex, int userStr)
-	{
-		return "{\"text\":\"" + userID + " 이/가 슬라임" + to_string(slimeIndex) + " 을/를 공격해서 데미지 " + to_string(userStr) + " 을/를 가했습니다.\"}";
-	}
+	string GetUserAttackSlimeJson(const string& userID, int slimeIndex, int userStr);
 
 	// Slime die
-	string GetSlimeDieJson(int slimeIndex, const string& userID)
-	{
-		return "{\"text\":\"슬라임" + to_string(slimeIndex) + " 이/가 " + userID + " 에 의해 죽었습니다.\"}";
-	}
+	string GetSlimeDieJson(int slimeIndex, const string& userID);
 
 	// User die
-	string GetUserDieJson(const string& userID, int slimeIndex, const SOCKET& sock)
-	{
-		return "{\"text\":\"" + userID + " 이/가 슬라임" + to_string(slimeIndex) + " 에 의해 죽었습니다.\",\"first\":" + to_string(sock) + "}";
-	}
+	string GetUserDieJson(const string& userID, int slimeIndex, const SOCKET& sock);
 
 	// Move response
-	string GetMoveRespJson(const string& userID)
-	{
-		return "{\"text\":\"(" + Redis::GetLocationX(userID) + "," + Redis::GetLocationY(userID) + ")로 이동했다.\"}";
-	}
+	string GetMoveRespJson(const string& userID);
 
 	// Text only
-	string GetTextOnlyJson(const string& text)
-	{
-		return "{\"text\":\"" + text + "\"}";
-	}
+	string GetTextOnlyJson(const string& text);
 
 	// Users response
-	string GetUsersRespJson(const string& userID)
-	{
-		string msg = "{\"text\":\"" + userID + " : (" + Redis::GetLocationX(userID) + ", " + Redis::GetLocationY(userID) + ")\\r\\n";
-		// 다른 클라이언트들의 위치
-		for (auto& entry : Server::activeClients)
-		{
-			if (entry.second->ID == userID)
-				continue;
-			msg += entry.second->ID + " : (" + Redis::GetLocationX(entry.second->ID) + ", " + Redis::GetLocationY(entry.second->ID) + ")\\r\\n";
-		}
-		msg += "\"}";
-
-		return msg;
-	}
+	string GetUsersRespJson(const string& userID);
 
 	// Monsters response
-	string GetMonstersRespJson()
-	{
-		string msg = "{\"text\":\"";
-		for (auto& slime : Logic::slimes)
-		{
-			msg += "Slime" + to_string(slime->index) + " : (" + to_string(slime->locX) + ", " + to_string(slime->locY) + ")\\r\\n";
-		}
-		msg += "\"}";
-
-		return msg;
-	}
+	string GetMonstersRespJson();
 
 	// Chat response
-	string GetChatRespJson(const string& userID, const string& text)
-	{
-		return "{\"text\":\"" + userID + "(으)로 부터 온 메시지 : " + text + "\"}";
-	}
+	string GetChatRespJson(const string& userID, const string& text);
 }
 
 // redis 관련
@@ -821,7 +782,10 @@ string Logic::ProcessAttack(const shared_ptr<Client>& client, const Job& job)
 		lock_guard<mutex> lg(slimesMutex);
 
 		for (auto& deadSlimeIt : deadSlimeIts)
+		{
 			slimes.erase(deadSlimeIt);
+			
+		}
 	}
 
 	// 공격할 대상이 없다면 클라이언트에게 알린다.
@@ -896,6 +860,69 @@ void Logic::SpawnSlime(int num)
 			slimes.push_back(shared_ptr<Slime>(new Slime()));
 		}
 	}
+}
+
+// namespace Json definition
+string Json::GetSlimeAttackUserJson(int slimeIndex, const string& userID, int slimeStr)
+{
+	return "{\"text\":\"슬라임" + to_string(slimeIndex) + " 이/가 " + userID + " 을/를 공격해서 데미지 " + to_string(slimeStr) + " 을/를 가했습니다.\"}";
+}
+
+string Json::GetUserAttackSlimeJson(const string& userID, int slimeIndex, int userStr)
+{
+	return "{\"text\":\"" + userID + " 이/가 슬라임" + to_string(slimeIndex) + " 을/를 공격해서 데미지 " + to_string(userStr) + " 을/를 가했습니다.\"}";
+}
+
+string Json::GetSlimeDieJson(int slimeIndex, const string& userID)
+{
+	return "{\"text\":\"슬라임" + to_string(slimeIndex) + " 이/가 " + userID + " 에 의해 죽었습니다.\"}";
+}
+
+string Json::GetUserDieJson(const string& userID, int slimeIndex, const SOCKET& sock)
+{
+	return "{\"text\":\"" + userID + " 이/가 슬라임" + to_string(slimeIndex) + " 에 의해 죽었습니다.\",\"first\":" + to_string(sock) + "}";
+}
+
+string Json::GetMoveRespJson(const string& userID)
+{
+	return "{\"text\":\"(" + Redis::GetLocationX(userID) + "," + Redis::GetLocationY(userID) + ")로 이동했다.\"}";
+}
+
+string Json::GetTextOnlyJson(const string& text)
+{
+	return "{\"text\":\"" + text + "\"}";
+}
+
+string Json::GetUsersRespJson(const string& userID)
+{
+	string msg = "{\"text\":\"" + userID + " : (" + Redis::GetLocationX(userID) + ", " + Redis::GetLocationY(userID) + ")\\r\\n";
+	// 다른 클라이언트들의 위치
+	for (auto& entry : Server::activeClients)
+	{
+		if (entry.second->ID == userID)
+			continue;
+		msg += entry.second->ID + " : (" + Redis::GetLocationX(entry.second->ID) + ", " + Redis::GetLocationY(entry.second->ID) + ")\\r\\n";
+	}
+	msg += "\"}";
+
+	return msg;
+}
+
+string Json::GetMonstersRespJson()
+{
+	string msg = "{\"text\":\"";
+	for (auto& slime : Logic::slimes)
+	{
+		msg += "Slime" + to_string(slime->index) + " : (" + to_string(slime->locX) + ", " + to_string(slime->locY) + ")\\r\\n";
+	}
+	msg += "\"}";
+
+	return msg;
+}
+
+string Json::GetChatRespJson(const string& userID, const string& text)
+{
+	return "{\"text\":\"" + userID + "(으)로 부터 온 메시지 : " + text + "\"}";
 }
 
 //bool isRepeat = false;
