@@ -44,8 +44,8 @@ public:
 
 	~Client();
 
-	void OnAttack(const shared_ptr<Slime>& slime);
-	bool IsDead();
+	int OnAttack(const shared_ptr<Slime>& slime);
+	//bool IsDead();
 
 public:
 	SOCKET sock;  // 이 클라이언트의 active socket
@@ -58,6 +58,7 @@ public:
 	bool lenCompleted;
 	int packetLen;
 	int offset;
+	bool shouldTerminate;
 
 	static const int MAX_X_ATTACK_RANGE = 1;
 	static const int MIN_X_ATTACK_RANGE = -1;
@@ -197,6 +198,12 @@ namespace Rand
 // json 관련
 namespace Json
 {
+	enum class M_Type
+	{
+		E_DIE,
+		E_DUP_CONNECTION,
+	};
+
 	// json recv key
 	static const char* TEXT = "text";
 	static const char* PARAM1 = "first";
@@ -220,13 +227,16 @@ namespace Json
 	string GetSlimeDieJson(int slimeIndex, const string& userID);
 
 	// User die
-	string GetUserDieJson(const string& userID, int slimeIndex, const SOCKET& sock);
+	string GetUserDieJson(const string& userID, int slimeIndex);
 
 	// Move response
 	string GetMoveRespJson(const string& userID);
 
 	// Text only
 	string GetTextOnlyJson(const string& text);
+
+	// Error Notify
+	string GetDupConnectionJson();
 
 	// Users response
 	string GetUsersRespJson(const string& userID);
@@ -686,28 +696,23 @@ namespace Redis
 // namespace Server Definition
 void Server::TerminateRemainUser(const string& ID)
 {
-	list<SOCKET> toDelete;
-
 	// 기존의 접속된 클라이언트를 찾는다.
 	for (auto& entry : Server::activeClients)
 	{
 		if (entry.second->ID == ID)
-			toDelete.push_back(entry.first);
-	}
-
-	// 기존 접속에서 예정되어 있던 보내야하는 메시지들을 모두 없앤다.
-	{
-		lock_guard<mutex> lg(Logic::shouldSendPacketsMutex);
-
-		for (auto& closedSock : toDelete)
 		{
-			while (!Logic::shouldSendPackets[closedSock].empty())
-				Logic::shouldSendPackets[closedSock].pop_front();
+			entry.second->shouldTerminate = true;
+
+			// 기존 접속에서 예정되어 있던 보내야하는 메시지들을 모두 없애고,
+			// 중복 로그인에 의해 접속 종료되는 것을 알리는 메시지를 마지막으로 전송하기 위해 메시지를 예약한다.
+			Logic::shouldSendPackets[entry.first].clear();
+
+			Logic::shouldSendPackets[entry.first].push_back(Json::GetDupConnectionJson());
 		}
 	}
 
 	// 지워야 하는 클라이언트들을 지운다.
-	{
+	/*{
 		lock_guard<mutex> lg(Server::activeClientsMutex);
 
 		for (auto& closedSock : toDelete)
@@ -715,18 +720,18 @@ void Server::TerminateRemainUser(const string& ID)
 			closesocket(closedSock);
 			Server::activeClients.erase(closedSock);
 		}
-	}
+	}*/
 }
 
 
 // class Client Definition
-Client::Client(SOCKET sock) : sock(sock), sendTurn(false), doingProc(false), lenCompleted(false), packetLen(0), offset(0), ID(""), sendPacket("")
+Client::Client(SOCKET sock) : sock(sock), sendTurn(false), doingProc(false), lenCompleted(false), packetLen(0), offset(0), ID(""), sendPacket(""), shouldTerminate(false)
 {}
 
 Client::~Client()
 {
 	// 유저가 접속 종료할 때 Expire
-	if (ID != "")
+	if (ID != "" && !shouldTerminate)
 	{
 		Redis::ExpireUser(ID);
 	}
@@ -734,24 +739,22 @@ Client::~Client()
 	cout << "Client destroyed. Socket: " << sock << endl;
 }
 
-void Client::OnAttack(const shared_ptr<Slime>& slime)
+int Client::OnAttack(const shared_ptr<Slime>& slime)
 {
 	cout << ID << " is On Attack by slime" << slime->index << '\n';
 
 	Redis::SetHp(ID, -1 * slime->str, Redis::F_Type::E_RELATIVE);
 
 	cout << "hayoon's remain hp : " << stoi(Redis::GetHp(ID)) << '\n';
+
+	int nowHp = stoi(Redis::GetHp(ID));
+	if (nowHp <= 0)
+	{
+		shouldTerminate = true;
+	}
+
+	return nowHp;
 }
-
-bool Client::IsDead()
-{
-	// 아직 등록되지 않은 유저이면 스킵
-	if (ID == "")
-		return false;
-
-	return (stoi(Redis::GetHp(ID)) <= 0);
-}
-
 
 // namespace Logic Definition
 void Logic::BroadcastToClients(const string& message, const string& exceptUser)
@@ -961,9 +964,9 @@ string Json::GetSlimeDieJson(int slimeIndex, const string& userID)
 	return "{\"text\":\"슬라임" + to_string(slimeIndex) + " 이/가 " + userID + " 에 의해 죽었습니다.\"}";
 }
 
-string Json::GetUserDieJson(const string& userID, int slimeIndex, const SOCKET& sock)
+string Json::GetUserDieJson(const string& userID, int slimeIndex)
 {
-	return "{\"text\":\"" + userID + " 이/가 슬라임" + to_string(slimeIndex) + " 에 의해 죽었습니다.\",\"first\":" + to_string(sock) + "}";
+	return "{\"text\":\"" + userID + " 이/가 슬라임" + to_string(slimeIndex) + " 에 의해 죽었습니다.\",\"error\":\"" + to_string(int(M_Type::E_DIE)) + "\"}";
 }
 
 string Json::GetMoveRespJson(const string& userID)
@@ -976,14 +979,24 @@ string Json::GetTextOnlyJson(const string& text)
 	return "{\"text\":\"" + text + "\"}";
 }
 
+string Json::GetDupConnectionJson()
+{
+	return "{\"text\":\"다른 클라이언트에서 동일한 아이디로 로그인했습니다.\",\"error\":\"" + to_string(int(M_Type::E_DUP_CONNECTION)) + "\"}";
+}
+
 string Json::GetUsersRespJson(const string& userID)
 {
+	// 해당 명령 보낸 클라이언트 우선 출력
 	string msg = "{\"text\":\"" + userID + " : (" + Redis::GetLocationX(userID) + ", " + Redis::GetLocationY(userID) + ")\\r\\n";
+
 	// 다른 클라이언트들의 위치
 	for (auto& entry : Server::activeClients)
 	{
-		if (entry.second->ID == userID)
+		// 해당 명령 보낸 클라이언트와 아직 로그인안된 클라이언트 제외
+		if (entry.second->ID == userID || entry.second->ID == "")
+		{
 			continue;
+		}
 		msg += entry.second->ID + " : (" + Redis::GetLocationX(entry.second->ID) + ", " + Redis::GetLocationY(entry.second->ID) + ")\\r\\n";
 	}
 	msg += "\"}";

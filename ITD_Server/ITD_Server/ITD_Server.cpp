@@ -277,8 +277,8 @@ void SlimeAttackCheckThread()
                 if (entry.second->ID == "")
                     continue;
 
-                // 이미 죽은 클라이언트라면 스킵
-                if (entry.second->IsDead())
+                // 사라져야하는 클라이언트면 스킵
+                if (entry.second->shouldTerminate)
                     continue;
 
                 int userLocX = stoi(Redis::GetLocationX(entry.second->ID));
@@ -287,22 +287,19 @@ void SlimeAttackCheckThread()
                 // 슬라임의 공격 범위 안에 유저가 있으면
                 if ((slimeLocX - userLocX <= Slime::MAX_X_ATTACK_RANGE && slimeLocX - userLocX >= Slime::MIN_X_ATTACK_RANGE) &&
                     (slimeLocY - userLocY <= Slime::MAX_Y_ATTACK_RANGE && slimeLocY - userLocY >= Slime::MIN_Y_ATTACK_RANGE))
-                /*if ((slimeLocX - userLocX <= 29 && slimeLocX - userLocX >= -29) &&
-                    (slimeLocY - userLocY <= 29 && slimeLocY - userLocY >= -29))*/
                 {
                     Logic::BroadcastToClients(Json::GetSlimeAttackUserJson(slime->index, entry.second->ID, slime->str));
 
-                    entry.second->OnAttack(slime);
                     // 공격 받은 클라이언트의 hp가 0일 때
-                    if (entry.second->IsDead())
+                    if (entry.second->OnAttack(slime) <= 0)
                     {
-                        // TODO : 클라이언트가 죽음을 알리는 메시지를 받을 때 그에따라 프로그램 종료 준비 필요
-                        Logic::BroadcastToClients(Json::GetUserDieJson(entry.second->ID, slime->index, entry.first));
+                        Logic::BroadcastToClients(Json::GetUserDieJson(entry.second->ID, slime->index));
                     }
                 }
             }
         }
         
+        // 슬라임의 공격 주기만큼 sleep
         this_thread::sleep_for(chrono::seconds(Slime::ATTACK_PERIOD));
     }
 }
@@ -350,7 +347,8 @@ int main()
 
     while (true) 
     {
-        int sendCount = 0;
+        // 데이터 보내기 혹은 제거되어야할 클라이언트가 존재하는지 나타내는 변수
+        bool shouldPass = false;
 
         fd_set readSet, exceptionSet;
 
@@ -379,9 +377,11 @@ int main()
                     FD_SET(activeSock, &exceptionSet);
                     maxSock = max(maxSock, activeSock);
 
-                    // 이 클라이언트가 데이터를 보낼 차례이면 jobQueue에 넣을 수 있도록 한다.
+                    // 이 클라이언트가 데이터를 보낼 차례이면 jobQueue에 넣을 수 있도록 sendCount를 증가시킨다.
                     if (client->sendTurn)
-                        ++sendCount;
+                    {
+                        shouldPass = true;
+                    }
                     // 이 클라이언트가 데이터를 보낼 차례가 아니면
                     else
                     {
@@ -395,9 +395,15 @@ int main()
                                 Logic::shouldSendPackets[client->sock].pop_front();
                                 client->sendTurn = true;
                                 client->packetLen = htonl(client->sendPacket.length());
-                                sendCount++;
+                                shouldPass = true;
                             }
                         }
+                    }
+
+                    // 만약 해당 클라이언트가 죽었거나 중복 로그인으로 인해 제거되어야 하면
+                    if (client->shouldTerminate)
+                    {
+                        shouldPass = true;
                     }
                 }
             }
@@ -417,7 +423,7 @@ int main()
 
         // 아무것도 반환을 안한 경우는 아래를 처리하지 않고 바로 다시 select 를 하게 한다.
         // select 의 반환값은 오류일 때 SOCKET_ERROR, 그 외의 경우 이벤트가 발생한 소켓 갯수이다.
-        if (r == 0 && sendCount == 0) 
+        if (r == 0 && !shouldPass) 
         {
             continue;
         }
@@ -473,14 +479,17 @@ int main()
                     continue;
                 }
 
-                // 해당 클라이언트가 보내야하는 메시지를 모두 보낸 상태이고 그 클라이언트가 죽었다면 없앤다.
-                if (client->sendTurn == false && Logic::shouldSendPackets[activeSock].empty() && client->IsDead())
+                // 해당 클라이언트가 보내야하는 메시지를 모두 보낸 상태이고 그 클라이언트가 죽었거나 삭제되어야하면 없앤다.
+                if (client->sendTurn == false && Logic::shouldSendPackets[activeSock].empty() && client->shouldTerminate)
                 {
                     // 소켓을 닫는다.
                     closesocket(client->sock);
 
-                    // 해당 유저에 설정된 Redis의 모든 키를 제거한다.
-                    Redis::DeleteAllUserKeys(client->ID);
+                    // 유저가 죽었다면 해당 유저에 설정된 Redis의 모든 키를 제거한다.
+                    if (stoi(Redis::GetHp(client->ID)) <= 0)
+                    {
+                        Redis::DeleteAllUserKeys(client->ID);
+                    }
 
                     // 지울 대상에 포함시킨다.
                     toDelete.push_back(activeSock);
