@@ -65,40 +65,6 @@ public:
 	static const int MIN_Y_ATTACK_RANGE = -1;
 };
 
-class Slime
-{
-	enum class PotionType
-	{
-		E_POTION_HP,
-		E_POTION_STR,
-	};
-
-public:
-	Slime();
-
-	~Slime()
-	{
-		cout << "Slime" << index << " is dead\n";
-	}
-
-	int OnAttack(const shared_ptr<Client>& client); 
-
-public:
-	int index;
-	int locX;
-	int locY;
-	int hp;
-	int str;
-	PotionType potionType;
-
-	static int slimeIndex;
-	static const int MAX_X_ATTACK_RANGE = 1;
-	static const int MIN_X_ATTACK_RANGE = -1;
-	static const int MAX_Y_ATTACK_RANGE = 1;
-	static const int MIN_Y_ATTACK_RANGE = -1;
-};
-int Slime::slimeIndex = 0;
-
 typedef function<string(shared_ptr<Client>, Job)> Handler;
 
 // 서버 구동 관련
@@ -133,6 +99,12 @@ namespace Logic
 
 	static const int NUM_POTION = 2;
 
+	enum class PotionType
+	{
+		E_POTION_HP,
+		E_POTION_STR,
+	};
+
 	map<SOCKET, list<string>> shouldSendPackets;
 	mutex shouldSendPacketsMutex;
 
@@ -158,6 +130,35 @@ namespace Logic
 
 	void SpawnSlime(int num);
 }
+
+// 슬라임 클래스
+class Slime
+{
+public:
+	Slime();
+
+	~Slime()
+	{
+		cout << "Slime" << index << " is dead\n";
+	}
+
+	int OnAttack(const shared_ptr<Client>& client);
+
+public:
+	int index;
+	int locX;
+	int locY;
+	int hp;
+	int str;
+	Logic::PotionType potionType;
+
+	static int slimeIndex;
+	static const int MAX_X_ATTACK_RANGE = 1;
+	static const int MIN_X_ATTACK_RANGE = -1;
+	static const int MAX_Y_ATTACK_RANGE = 1;
+	static const int MIN_Y_ATTACK_RANGE = -1;
+};
+int Slime::slimeIndex = 0;
 
 // 난수 관련
 namespace Rand
@@ -250,6 +251,7 @@ namespace Redis
 
 	static const int EXIST_ID = 1;
 
+	// TODO : 키 만료 시간 수정 필요
 	static const char* EXPIRE_TIME = "30";
 	static const char* LOGINED = "1";
 	static const char* EXPIRED = "0";
@@ -340,6 +342,42 @@ namespace Redis
 	{
 		string ret = "";
 		string getCmd = "GET USER:" + ID + STR;
+		redisReply* reply;
+		{
+			lock_guard<mutex> lg(redisMutex);
+
+			reply = (redisReply*)redisCommand(Redis::redis, getCmd.c_str());
+			if (reply->type == REDIS_REPLY_STRING)
+				ret = reply->str;
+		}
+
+		freeReplyObject(reply);
+
+		return ret;
+	}
+
+	string GetHpPotion(const string& ID)
+	{
+		string ret = "";
+		string getCmd = "GET USER:" + ID + POTION_HP;
+		redisReply* reply;
+		{
+			lock_guard<mutex> lg(redisMutex);
+
+			reply = (redisReply*)redisCommand(Redis::redis, getCmd.c_str());
+			if (reply->type == REDIS_REPLY_STRING)
+				ret = reply->str;
+		}
+
+		freeReplyObject(reply);
+
+		return ret;
+	}
+
+	string GetStrPotion(const string& ID)
+	{
+		string ret = "";
+		string getCmd = "GET USER:" + ID + POTION_STR;
 		redisReply* reply;
 		{
 			lock_guard<mutex> lg(redisMutex);
@@ -453,9 +491,19 @@ namespace Redis
 		freeReplyObject(reply);
 	}
 
-	void SetHpPotion(const string& ID, int numOfPotion)
+	void SetHpPotion(const string& ID, int numOfPotion, F_Type t = F_Type::E_ABSOLUTE)
 	{
-		string setCmd = "SET USER:" + ID + POTION_HP + " " + to_string(numOfPotion);
+		string setCmd;
+		if (t == F_Type::E_ABSOLUTE)
+		{
+			setCmd = "SET USER:" + ID + POTION_HP + " " + to_string(numOfPotion);
+		}
+		else
+		{
+			int newNumOfPotion = stoi(GetHpPotion(ID)) + numOfPotion;
+			setCmd = "SET USER:" + ID + POTION_HP + " " + to_string(newNumOfPotion);
+		}
+
 		redisReply* reply; 
 		{
 			lock_guard<mutex> lg(redisMutex);
@@ -469,9 +517,19 @@ namespace Redis
 		freeReplyObject(reply);
 	}
 
-	void SetStrPotion(const string& ID, int numOfPotion)
+	void SetStrPotion(const string& ID, int numOfPotion, F_Type t = F_Type::E_ABSOLUTE)
 	{
-		string setCmd = "SET USER:" + ID + POTION_STR + " " + to_string(numOfPotion);
+		string setCmd;
+		if (t == F_Type::E_ABSOLUTE)
+		{
+			setCmd = "SET USER:" + ID + POTION_STR + " " + to_string(numOfPotion);
+		}
+		else
+		{
+			int newNumOfPotion = stoi(GetStrPotion(ID)) + numOfPotion;
+			setCmd = "SET USER:" + ID + POTION_STR + " " + to_string(newNumOfPotion);
+		}
+
 		redisReply* reply;
 		{
 			lock_guard<mutex> lg(redisMutex);
@@ -697,7 +755,7 @@ Slime::Slime()
 	locY = Rand::GetRandomLoc();
 	hp = Rand::GetRandomSlimeHp();
 	str = Rand::GetRandomSlimeStr();
-	potionType = PotionType(Rand::GetRandomPotionType());
+	potionType = Logic::PotionType(Rand::GetRandomPotionType());
 }
 
 int Slime::OnAttack(const shared_ptr<Client>& client)
@@ -783,8 +841,17 @@ string Logic::ProcessAttack(const shared_ptr<Client>& client, const Job& job)
 
 		for (auto& deadSlimeIt : deadSlimeIts)
 		{
+			// 죽은 슬라임이 가지고 있던 포션을 유저가 획득한다.
+			if ((*deadSlimeIt)->potionType == Logic::PotionType::E_POTION_HP)
+			{
+				Redis::SetHpPotion(client->ID, 1, Redis::F_Type::E_RELATIVE);
+			}
+			else if ((*deadSlimeIt)->potionType == Logic::PotionType::E_POTION_STR)
+			{
+				Redis::SetStrPotion(client->ID, 1, Redis::F_Type::E_RELATIVE);
+			}
+
 			slimes.erase(deadSlimeIt);
-			
 		}
 	}
 
