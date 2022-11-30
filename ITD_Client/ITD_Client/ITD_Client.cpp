@@ -41,7 +41,7 @@ int main()
     Logic::Login();
 
     // cin으로 입력받은 텍스트를 JSON으로 변경해 서버로 전송한다.
-    while (!Client::bExit) {
+    while (true) {
         string text = Logic::GetInputTextJson();
         if (text == "")
         {

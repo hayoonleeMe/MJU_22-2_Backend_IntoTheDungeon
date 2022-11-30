@@ -15,6 +15,8 @@
 using namespace std;
 using namespace rapidjson;
 
+#include <windows.h>
+
 // ws2_32.lib 를 링크한다.
 #pragma comment(lib, "Ws2_32.lib")
 
@@ -211,8 +213,18 @@ void Logic::Login()
 
 void Logic::ExitProgram()
 {
-	Client::bExit = true;
 	cout << "프로그램을 종료합니다.\n";
+
+	int r = closesocket(Client::sock);
+	if (r == SOCKET_ERROR) {
+		cerr << "closesocket failed with error " << WSAGetLastError() << endl;
+		exit(1);
+	}
+
+	// Winsock 을 정리한다.
+	WSACleanup();
+
+	exit(0);
 }
 
 void Logic::RecvThreadProc()
@@ -222,7 +234,6 @@ void Logic::RecvThreadProc()
 		if (!ReceiveData())
 		{
 			ExitProgram();
-			return;
 		}
 	}
 }
