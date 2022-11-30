@@ -25,26 +25,19 @@ namespace Client
 {
 	static const char* SERVER_ADDRESS = "127.0.0.1";
 	static const unsigned short SERVER_PORT = 27015;
-	//static const int NUM_ADDITIONAL_THREAD = 2;
 	SOCKET sock;	// TCP 소켓
 	mutex sockMutex;
-	bool bExit;
 	char recvBuf[65536];
+	string ID;
 }
 
 // 내부 로직 관련
 namespace Logic
 {
-	enum class M_Type
-	{
-		E_DIE,
-		E_DUP_CONNECTION,
-	};
-
 	// 서버로 데이터를 보낸다.
 	bool SendData(const string& text);
 
-	// 데이터를 받는다.
+	// 서버로부터 데이터를 받는다.
 	bool ReceiveData();
 
 	// cin으로 입력받은 텍스트를 json 문자열로 변환해 반환하는 함수
@@ -55,9 +48,20 @@ namespace Logic
 
 	// 프로그램 종료 준비
 	void ExitProgram();
+}
 
-	// recvThread가 호출하는, 계속해서 receive하는 함수
-	void RecvThreadProc();
+namespace Json
+{
+	enum class M_Type
+	{
+		E_DIE,
+		E_DUP_CONNECTION,
+	};
+
+	// json recv key
+	static const char* TEXT = "text";
+	static const char* M_ERROR = "error";
+	static const char* USER_ID = "userid";
 }
 
 
@@ -65,7 +69,6 @@ namespace Logic
 bool Logic::SendData(const string& text)
 {
 	int r = 0;
-
 	int dataLen = text.length();
 
 	// 길이를 먼저 보낸다.
@@ -81,7 +84,7 @@ bool Logic::SendData(const string& text)
 		}
 		offset += r;
 	}
-	cout << "Sent length info: " << dataLen << endl;
+	//cout << "Sent length info: " << dataLen << endl;
 
 	offset = 0;
 	while (offset < dataLen) {
@@ -90,7 +93,7 @@ bool Logic::SendData(const string& text)
 			cerr << "send failed with error " << WSAGetLastError() << endl;
 			return false;
 		}
-		cout << "Sent " << r << " bytes" << endl;
+		//cout << "Sent " << r << " bytes" << endl;
 		offset += r;
 	}
 
@@ -102,7 +105,7 @@ bool Logic::ReceiveData()
 	int r = 0;
 	// 길이 정보를 받기 위해서 4바이트를 읽는다.
 	// network byte order 로 전성되기 때문에 ntohl() 을 호출한다.
-	std::cout << "Receiving length info" << std::endl;
+	//std::cout << "Receiving length info" << std::endl;
 	int dataLenNetByteOrder;
 	int offset = 0;
 	while (offset < 4) {
@@ -120,7 +123,7 @@ bool Logic::ReceiveData()
 		offset += r;
 	}
 	int dataLen = ntohl(dataLenNetByteOrder);
-	std::cout << "Received length info: " << dataLen << std::endl;
+	//std::cout << "Received length info: " << dataLen << std::endl;
 
 	// 혹시 우리가 받을 데이터가 64KB보다 큰지 확인한다.
 	if (dataLen > sizeof(Client::recvBuf))
@@ -131,7 +134,7 @@ bool Logic::ReceiveData()
 
 	// socket 으로부터 데이터를 받는다.
 	// TCP 는 연결 기반이므로 누가 보냈는지는 accept 시 결정되고 그 뒤로는 send/recv 만 호출한다.
-	std::cout << "Receiving stream" << std::endl;
+	//std::cout << "Receiving stream" << std::endl;
 	offset = 0;
 	while (offset < dataLen) {
 		r = recv(Client::sock, Client::recvBuf + offset, dataLen - offset, 0);
@@ -144,31 +147,37 @@ bool Logic::ReceiveData()
 			// 따라서 r == 0 인 경우도 loop 을 탈출하게 해야된다.
 			return false;
 		}
-		std::cout << "Received " << r << " bytes" << std::endl;
+		//std::cout << "Received " << r << " bytes" << std::endl;
 		offset += r;
 	}
 
+	// 받은 json 메시지 처리
 	const string json = string(Client::recvBuf).substr(0, dataLen);
 
 	Document document;
 	document.Parse(json);
 
-	cout << "Received json : " << json << '\n';
-	cout << "Received text : " << document["text"].GetString() << '\n';
+	//cout << "Received json : " << json << '\n';
+	//cout << "Received text : " << document["text"].GetString() << '\n';
+	cout << document[Json::TEXT].GetString() << '\n';
 
 	// 받은 메세지가 문제를 알리는 메시지인지 확인
-	if (document.HasMember("error"))
+	if (document.HasMember(Json::M_ERROR))
 	{
 		// 유저가 죽은 것을 알리는 메시지일 때
-		if (M_Type(stoi(document["error"].GetString())) == M_Type::E_DIE)
+		if (Json::M_Type(stoi(document[Json::M_ERROR].GetString())) == Json::M_Type::E_DIE)
 		{
-			cout << "Receive Die message\n";
-			ExitProgram();
+			//cout << "Receive Die message\n";
+			// 죽은 클라이언트가 본 클라이언트라면 프로그램 종료
+			if (document[Json::USER_ID].GetString() == Client::ID)
+			{
+				ExitProgram();
+			}
 		}
-		// 다른 클라이언트에서 동일한 아이디로 로그인했을 때
-		else if (M_Type(stoi(document["error"].GetString())) == M_Type::E_DUP_CONNECTION)
+		// 다른 클라이언트에서 동일한 아이디로 로그인했을 때 프로그램 종료
+		else if (Json::M_Type(stoi(document[Json::M_ERROR].GetString())) == Json::M_Type::E_DUP_CONNECTION)
 		{
-			cout << "Receive Dup Connection message\n";
+			//cout << "Receive Dup Connection message\n";
 			ExitProgram();
 		}
 	}
@@ -205,6 +214,7 @@ void Logic::Login()
 	cout << "로그인 시작\n" << "아이디를 입력하세요.\n";
 	string ID;
 	cin >> ID;
+	Client::ID = ID;
 
 	string text = "{\"text\":\"login\",\"first\":\"" + ID + "\"}";
 
@@ -215,6 +225,7 @@ void Logic::ExitProgram()
 {
 	cout << "프로그램을 종료합니다.\n";
 
+	// Socket을 닫는다.
 	int r = closesocket(Client::sock);
 	if (r == SOCKET_ERROR) {
 		cerr << "closesocket failed with error " << WSAGetLastError() << endl;
@@ -225,15 +236,4 @@ void Logic::ExitProgram()
 	WSACleanup();
 
 	exit(0);
-}
-
-void Logic::RecvThreadProc()
-{
-	while (!Client::bExit)
-	{
-		if (!ReceiveData())
-		{
-			ExitProgram();
-		}
-	}
 }

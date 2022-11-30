@@ -122,7 +122,7 @@ bool processClient(shared_ptr<Client> client)
             else
             {
                 // 명령별 로직 수행
-                Job job;
+                Logic::ParamsForProc job;
                 if (document.HasMember(Json::PARAM1))
                 {
                     job.param1 = document[Json::PARAM1].GetString();

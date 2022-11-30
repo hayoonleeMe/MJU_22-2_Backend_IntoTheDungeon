@@ -28,12 +28,6 @@ using namespace rapidjson;
 // ws2_32.lib 를 링크한다.
 #pragma comment(lib, "Ws2_32.lib")
 
-struct Job
-{
-	string param1;
-	string param2;
-};
-
 class Slime;
 
 // 서버로 로그인된 유저 클라이언트
@@ -66,9 +60,7 @@ public:
 	static const int MIN_Y_ATTACK_RANGE = -1;
 };
 
-typedef function<string(shared_ptr<Client>, Job)> Handler;
-
-// 서버 구동 관련
+// 서버 구동 관련 네임스페이스
 namespace Server
 {
 	static const char* SERVER_ADDRESS = "127.0.0.1";
@@ -84,9 +76,18 @@ namespace Server
 	void TerminateRemainUser(const string& ID);
 }
 
-// 내부 로직 관련
+// 내부 로직 관련 네임스페이스
 namespace Logic
 {
+	// Process 함수들이 사용할 데이터를 나타내는 구조체
+	struct ParamsForProc
+	{
+		string param1;
+		string param2;
+	};
+
+	typedef function<string(shared_ptr<Client>, Logic::ParamsForProc)> Handler;
+
 	static const int NUM_DUNGEON_X = 30;
 	static const int NUM_DUNGEON_Y = 30;
 
@@ -117,15 +118,16 @@ namespace Logic
 
 	void BroadcastToClients(const string& message, const string& exceptID = "");
 
-	string ProcessMove(const shared_ptr<Client>& client, const Job& job);
-	string ProcessAttack(const shared_ptr<Client>& client, const Job& job);
-	string ProcessMonsters(const shared_ptr<Client>& client, const Job& job);
-	string ProcessUsers(const shared_ptr<Client>& client, const Job& job);
-	string ProcessChat(const shared_ptr<Client>& client, const Job& job);
+	string ProcessMove(const shared_ptr<Client>& client, const ParamsForProc& job);
+	string ProcessAttack(const shared_ptr<Client>& client, const ParamsForProc& job);
+	string ProcessMonsters(const shared_ptr<Client>& client, const ParamsForProc& job);
+	string ProcessUsers(const shared_ptr<Client>& client, const ParamsForProc& job);
+	string ProcessChat(const shared_ptr<Client>& client, const ParamsForProc& job);
 	void InitHandlers();
 
 	void SpawnSlime(int num);
 }
+
 
 // 슬라임 클래스
 class Slime
@@ -163,7 +165,7 @@ public:
 };
 int Slime::slimeIndex = 0;
 
-// 난수 관련
+// 난수 관련 네임스페이스
 namespace Rand
 {
 	// random
@@ -195,7 +197,7 @@ namespace Rand
 	}
 }
 
-// json 관련
+// json 관련 네임스페이스
 namespace Json
 {
 	enum class M_Type
@@ -248,7 +250,7 @@ namespace Json
 	string GetChatRespJson(const string& userID, const string& text);
 }
 
-// redis 관련
+// redis 관련 네임스페이스
 namespace Redis
 {
 	// hiredis 
@@ -710,17 +712,6 @@ void Server::TerminateRemainUser(const string& ID)
 			Logic::shouldSendPackets[entry.first].push_back(Json::GetDupConnectionJson());
 		}
 	}
-
-	// 지워야 하는 클라이언트들을 지운다.
-	/*{
-		lock_guard<mutex> lg(Server::activeClientsMutex);
-
-		for (auto& closedSock : toDelete)
-		{
-			closesocket(closedSock);
-			Server::activeClients.erase(closedSock);
-		}
-	}*/
 }
 
 
@@ -773,7 +764,7 @@ void Logic::BroadcastToClients(const string& message, const string& exceptUser)
 	}
 }
 
-string Logic::ProcessMove(const shared_ptr<Client>& client, const Job& job)
+string Logic::ProcessMove(const shared_ptr<Client>& client, const ParamsForProc& job)
 {
 	cout << "ProcessMove is called\n";
 	Redis::SetLocation(client->ID, stoi(job.param1), stoi(job.param2), Redis::F_Type::E_RELATIVE);
@@ -781,7 +772,7 @@ string Logic::ProcessMove(const shared_ptr<Client>& client, const Job& job)
 	return Json::GetMoveRespJson(client->ID);
 }
 
-string Logic::ProcessAttack(const shared_ptr<Client>& client, const Job& job)
+string Logic::ProcessAttack(const shared_ptr<Client>& client, const ParamsForProc& job)
 {
 	cout << "ProcessAttack is called\n";
 
@@ -854,14 +845,14 @@ string Logic::ProcessAttack(const shared_ptr<Client>& client, const Job& job)
 	return ret;
 }
 
-string Logic::ProcessMonsters(const shared_ptr<Client>& client, const Job& job)
+string Logic::ProcessMonsters(const shared_ptr<Client>& client, const ParamsForProc& job)
 {
 	cout << "ProcessMonsters is called\n";
 
 	return Json::GetMonstersRespJson();
 }
 
-string Logic::ProcessUsers(const shared_ptr<Client>& client, const Job& job)
+string Logic::ProcessUsers(const shared_ptr<Client>& client, const ParamsForProc& job)
 {
 	cout << "ProcessUsers is called\n";
 
@@ -869,7 +860,7 @@ string Logic::ProcessUsers(const shared_ptr<Client>& client, const Job& job)
 	return Json::GetUsersRespJson(client->ID);
 }
 
-string Logic::ProcessChat(const shared_ptr<Client>& client, const Job& job)
+string Logic::ProcessChat(const shared_ptr<Client>& client, const ParamsForProc& job)
 {
 	cout << "ProcessChat is called\n";
 
@@ -966,7 +957,7 @@ string Json::GetSlimeDieJson(int slimeIndex, const string& userID)
 
 string Json::GetUserDieJson(const string& userID, int slimeIndex)
 {
-	return "{\"text\":\"" + userID + " 이/가 슬라임" + to_string(slimeIndex) + " 에 의해 죽었습니다.\",\"error\":\"" + to_string(int(M_Type::E_DIE)) + "\"}";
+	return "{\"text\":\"" + userID + " 이/가 슬라임" + to_string(slimeIndex) + " 에 의해 죽었습니다.\",\"userid\":\"" + userID + "\", \"error\":\"" + to_string(int(M_Type::E_DIE)) + "\"}";
 }
 
 string Json::GetMoveRespJson(const string& userID)

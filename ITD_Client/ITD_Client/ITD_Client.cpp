@@ -1,9 +1,19 @@
 #include "ITD_Client.h"
 
+// 계속해서 서버로부터 메시지를 받는 함수
+void RecvThreadProc()
+{
+    while (true)
+    {
+        if (!Logic::ReceiveData())
+        {
+            Logic::ExitProgram();
+        }
+    }
+}
+
 int main()
 {
-    Client::bExit = false;
-
     int r = 0;
 
     // Winsock 을 초기화한다.
@@ -21,7 +31,8 @@ int main()
         return false;
     }
 
-    shared_ptr<thread> recvThread(new thread(Logic::RecvThreadProc));
+    // 서버로부터 메시지를 받는 쓰레드 생성
+    shared_ptr<thread> recvThread(new thread(RecvThreadProc));
 
     // TCP 는 연결 기반이다. 서버 주소를 정하고 connect() 로 연결한다.
     // connect 후에는 별도로 서버 주소를 기재하지 않고 send/recv 를 한다.
@@ -48,7 +59,6 @@ int main()
             cout << "Wrong Text, Try Again\n";
             continue;
         }
-        cout << text << endl;
 
         if (!Logic::SendData(text))
             Logic::ExitProgram();
