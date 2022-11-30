@@ -22,8 +22,8 @@
 #include <WinSock2.h>
 #include <WS2tcpip.h>
 
-using namespace std;
 using namespace rapidjson;
+using namespace std;
 
 // ws2_32.lib 를 링크한다.
 #pragma comment(lib, "Ws2_32.lib")
@@ -92,10 +92,13 @@ namespace Logic
 	static const int NUM_DUNGEON_X = 30;			// 던전 X축 크기
 	static const int NUM_DUNGEON_Y = 30;			// 던전 Y축 크기
 
-	static const int SLIME_GEN_PERIOD = 60;			// 슬라임 생성 주기
+	static const int SLIME_GEN_PERIOD = 60;			// 슬라임 생성 주기 (초)
 	static const int MAX_NUM_OF_SLIME = 10;			// 최대 슬라임 수
 
 	static const int NUM_POTION_TYPE = 2;			// 포션 타입 수
+	static const int HP_POTION_HEAL = 10;			// hp 포션 체력 증가량
+	static const int STR_POTION_DAMAGE = 3;			// str 포션 공격력 증가량
+	static const int STR_POTION_DURATION = 20;		// str 포션 지속시간 (초)
 
 	// 포션 타입을 나타내는 enum class
 	enum class PotionType
@@ -104,7 +107,7 @@ namespace Logic
 		E_POTION_STR,
 	};
 
-	map<SOCKET, list<string>> shouldSendPackets;	// 예약된 보내야하는 메시지
+	map<SOCKET, list<string>> shouldSendPackets;	// 보내져야하는 예약된 메시지
 	mutex shouldSendPacketsMutex;					// shouldSendPackets 뮤텍스
 
 	map<string, Handler> handlers;					// Process 함수 맵
@@ -124,19 +127,29 @@ namespace Logic
 
 	// move 명령어를 처리하는 함수
 	string ProcessMove(const shared_ptr<Client>& client, const ParamsForProc& job);
+
 	// attack 명령어를 처리하는 함수
 	string ProcessAttack(const shared_ptr<Client>& client, const ParamsForProc& job);
+
 	// monsters 명령어를 처리하는 함수
 	string ProcessMonsters(const shared_ptr<Client>& client, const ParamsForProc& job);
+
 	// users 명령어를 처리하는 함수
 	string ProcessUsers(const shared_ptr<Client>& client, const ParamsForProc& job);
+
 	// chat 명령어를 처리하는 함수
 	string ProcessChat(const shared_ptr<Client>& client, const ParamsForProc& job);
+
+	// usepotion 명령어를 처리하는 함수
+	string ProcessUsePotion(const shared_ptr<Client>& client, const ParamsForProc& job);
+
 	// handlers 초기화하는 함수
 	void InitHandlers();
 
 	// 슬라임을 num만큼 스폰하는 함수
 	void SpawnSlime(int num);
+
+	void StrPotion(const shared_ptr<Client>& client);
 }
 
 // 슬라임 클래스
@@ -164,7 +177,7 @@ public:
 	static const int MIN_X_ATTACK_RANGE = -1;	// x축 최소 공격범위
 	static const int MAX_Y_ATTACK_RANGE = 1;	// y축 최대 공격범위
 	static const int MIN_Y_ATTACK_RANGE = -1;	// y축 최소 공격범위
-	static const int ATTACK_PERIOD = 5;			// 공격 주기
+	static const int ATTACK_PERIOD = 5;			// 공격 주기 (초)
 	static const int MIN_HP = 5;				// 최소 hp
 	static const int MAX_HP = 10;				// 최대 hp
 	static const int MIN_STR = 3;				// 최소 str
@@ -213,7 +226,10 @@ namespace Rand
 	}
 }
 
-// json 관련 네임스페이스
+/// <summary> json 관련 네임스페이스
+/// json 문자열의 첫번째 키는 TEXT, 이후 키들은 순서대로 PARAM1, PARAM2이다.
+/// 메시지 타입이 있는 경우 두번째 키인 PARAM1의 value로 제공된다.
+/// </summary>
 namespace Json
 {
 	// 메시지 타입을 나타내는 enum class
@@ -223,18 +239,20 @@ namespace Json
 		E_DUP_CONNECTION,
 	};
 
-	// json recv key
+	// json key
 	static const char* TEXT = "text";
-	static const char* PARAM1 = "first";
-	static const char* PARAM2 = "second";
+	static const char* PARAM1 = "param1";
+	static const char* PARAM2 = "param2";
 
-	// json recv value
 	static const char* LOGIN = "login";
 	static const char* MOVE = "move";
 	static const char* ATTACK = "attack";
 	static const char* MONSTERS = "monsters";
 	static const char* USERS = "users";
 	static const char* CHAT = "chat";
+	static const char* USE_POTION = "usepotion";
+	static const char* HP_POTION = "hp";
+	static const char* STR_POTION = "str";
 
 	// Slime attack to user
 	string GetSlimeAttackUserJson(int slimeIndex, const string& userID, int slimeStr);
@@ -257,11 +275,11 @@ namespace Json
 	// Error Notify
 	string GetDupConnectionJson();
 
-	// Users response
-	string GetUsersRespJson(const string& userID);
-
 	// Monsters response
 	string GetMonstersRespJson();
+
+	// Users response
+	string GetUsersRespJson(const string& userID);
 
 	// Chat response
 	string GetChatRespJson(const string& userID, const string& text);
@@ -314,6 +332,8 @@ namespace Redis
 
 		if (reply->type == REDIS_REPLY_STRING)
 			return reply->str;
+
+		freeReplyObject(reply);
 
 		return "";
 	}
@@ -432,6 +452,26 @@ namespace Redis
 		return ret;
 	}
 
+	// ttl USER:ID 
+	int GetTTL(const string& ID)
+	{
+		int ret = 0;
+		string ttlCmd = "TTL USER:" + ID;
+		redisReply* reply;
+		{
+			lock_guard<mutex> lg(redisMutex);
+
+			reply = (redisReply*)redisCommand(Redis::redis, ttlCmd.c_str());
+		}
+
+		if (reply->type == REDIS_REPLY_INTEGER)
+			ret = reply->integer;
+
+		freeReplyObject(reply);
+
+		return ret;
+	}
+
 	// set USER:ID status
 	void SetUserConnection(const string& ID, const char* status)
 	{
@@ -523,10 +563,23 @@ namespace Redis
 	}
 
 	// set USER:ID:str str
-	void SetStr(const string& ID, int str)
+	// t == E_ABSOLUTE : 바로 세팅
+	// t == E_RELATIVE : 현재값을 기준으로 세팅
+	void SetStr(const string& ID, int str, F_Type t = F_Type::E_ABSOLUTE)
 	{
-		string setCmd = "SET USER:" + ID + STR + " " + to_string(str);
-		redisReply* reply; 
+		string setCmd;
+		if (t == F_Type::E_ABSOLUTE)
+		{
+			int newStr = max(0, str);
+			setCmd = "SET USER:" + ID + STR + " " + to_string(newStr);
+		}
+		else
+		{
+			int newStr = max(0, stoi(GetStr(ID)) + str);
+			setCmd = "SET USER:" + ID + STR + " " + to_string(newStr);
+		}
+
+		redisReply* reply;
 		{
 			lock_guard<mutex> lg(redisMutex);
 
@@ -595,6 +648,23 @@ namespace Redis
 			cout << "Redis Command Error : " << setCmd << '\n';
 
 		freeReplyObject(reply);
+	}
+
+	// expire specific key
+	void ExpireKey(const string& ID, const string& key, int expire_time)
+	{
+		string expireCmd = "EXPIRE USER:" + ID + key + " " + to_string(expire_time);
+		redisReply* reply;
+		{
+			lock_guard<mutex> lg(redisMutex);
+
+			reply = (redisReply*)redisCommand(redis, expireCmd.c_str());
+		}
+
+		if (reply->type == REDIS_REPLY_ERROR)
+			cout << "Redis Command Error : " << expireCmd << '\n';
+
+		freeReplyObject(reply); 
 	}
 
 	// expire all key
@@ -671,18 +741,16 @@ namespace Redis
 			if (reply->integer == EXIST_ID)
 			{
 				// 이미 아이디가 로그인 중일 때 기존의 접속 강제 종료
-				if (strcmp(GetUserConnection(ID).c_str(), LOGINED) == 0)
+				if (GetUserConnection(ID) == LOGINED)
 				{
 					cout << ID + " 이미 로그인 되어 있음\n";
 					ret = Json::GetTextOnlyJson("기존의 접속을 종료하고 로그인했습니다.");
 
-					// 기존 접속들을 강제 종료했으므로 redis의 key들은 expire 된다.
-					// 이를 다시 영구적인 값으로 되돌려 새로 로그인한 클라만이 사용하도록 한다.
+					// 기존 접속들을 강제 종료한다.
 					Server::TerminateRemainUser(ID);
-					PersistUser(ID);
 				}
 				// 종료 후 5분이 지나기 전에 재접속
-				else if (strcmp(GetUserConnection(ID).c_str(), EXPIRED) == 0)
+				else if (GetUserConnection(ID) == EXPIRED)
 				{
 					cout << ID + " 재접속함\n";
 					ret = Json::GetTextOnlyJson("로그인에 성공했습니다.");
@@ -762,12 +830,6 @@ Client::Client(SOCKET sock) : sock(sock), sendTurn(false), doingProc(false), len
 
 Client::~Client()
 {
-	// 유저가 접속 종료할 때 Expire
-	if (ID != "" && !shouldTerminate)
-	{
-		Redis::ExpireUser(ID);
-	}
-
 	cout << "Client destroyed. Socket: " << sock << endl;
 }
 
@@ -929,6 +991,61 @@ string Logic::ProcessChat(const shared_ptr<Client>& client, const ParamsForProc&
 	return Json::GetTextOnlyJson("메시지를 전송했습니다.");
 }
 
+string Logic::ProcessUsePotion(const shared_ptr<Client>& client, const ParamsForProc& job)
+{
+	string ret = "";
+
+	// hp potion 사용
+	if (job.param1 == Json::HP_POTION)
+	{
+		cout << "ProcessUsePotion hp is called\n";
+
+		int numOfPotion = stoi(Redis::GetHpPotion(client->ID));
+
+		// hp potion이 존재할 때
+		if (numOfPotion > 0)
+		{
+			// 체력 증가
+			Redis::SetHp(client->ID, HP_POTION_HEAL, Redis::F_Type::E_RELATIVE);
+
+			// hp 포션 개수 차감
+			Redis::SetHpPotion(client->ID, -1, Redis::F_Type::E_RELATIVE);
+
+			ret = Json::GetTextOnlyJson("체력이 10 증가했습니다.");
+		}
+		// hp potion이 존재하지 않을 때
+		else
+		{
+			ret = Json::GetTextOnlyJson("Hp 포션이 존재하지 않습니다.");
+		}
+	}
+	// str potion 사용
+	else if (job.param1 == Json::STR_POTION)
+	{
+		cout << "ProcessUsePotion str is called\n";
+
+		int numOfPotion = stoi(Redis::GetStrPotion(client->ID));
+
+		// str potion이 존재할 때
+		if (numOfPotion > 0)
+		{
+			// 지속시간동안 공격력을 증가시키는 StrPotion 함수를 호출하는 쓰레드 생성
+			shared_ptr<thread> strPotionThread(new thread(StrPotion, client));
+			strPotionThread->detach();
+
+			// str 포션 개수 차감
+			Redis::SetStrPotion(client->ID, -1, Redis::F_Type::E_RELATIVE);
+		}
+		// str potion이 존재하지 않을 때
+		else
+		{
+			ret = Json::GetTextOnlyJson("Str 포션이 존재하지 않습니다.");
+		}
+	}
+
+	return ret;
+}
+
 void Logic::InitHandlers()
 {
 	handlers[Json::MOVE] = ProcessMove;
@@ -936,6 +1053,7 @@ void Logic::InitHandlers()
 	handlers[Json::MONSTERS] = ProcessMonsters;
 	handlers[Json::USERS] = ProcessUsers;
 	handlers[Json::CHAT] = ProcessChat;
+	handlers[Json::USE_POTION] = ProcessUsePotion;
 }
 
 void Logic::SpawnSlime(int num)
@@ -950,6 +1068,36 @@ void Logic::SpawnSlime(int num)
 		{
 			slimes.push_back(shared_ptr<Slime>(new Slime()));
 		}
+	}
+}
+
+void Logic::StrPotion(const shared_ptr<Client>& client)
+{
+	// str 증가
+	Redis::SetStr(client->ID, STR_POTION_DAMAGE, Redis::F_Type::E_RELATIVE);
+
+	// 지속시간 동안 대기
+	this_thread::sleep_for(chrono::seconds(STR_POTION_DURATION));
+
+	// 증가량 만큼 str 감소
+	Redis::SetStr(client->ID, -1 * STR_POTION_DAMAGE, Redis::F_Type::E_RELATIVE);
+
+	// 현재 유저가 접속중인 상태라면 종료 메시지 예약
+	if (Redis::GetUserConnection(client->ID) == Redis::LOGINED)
+	{
+		// 종료 메시지 예약
+		{
+			lock_guard<mutex> lg(shouldSendPacketsMutex);
+
+			shouldSendPackets[client->sock].push_back(Json::GetTextOnlyJson("Str 증가 효과가 종료되었습니다."));
+		}
+	}
+	// 효과가 끝나기 전에 유저가 나가서 키가 Expire 된 상태일 때
+	else if (Redis::GetUserConnection(client->ID) == Redis::EXPIRED)
+	{
+		// Expire된 상태에서 str을 감소시켰기 때문에 Persist 상태가 된다.
+		// 따라서 str키를 다른 키의 남은 만료시간(TTL)만큼 다시 Expire한다.
+		Redis::ExpireKey(client->ID , Redis::STR, Redis::GetTTL(client->ID));
 	}
 }
 
@@ -983,43 +1131,45 @@ bool Slime::IsDead()
 // namespace Json definition
 string Json::GetSlimeAttackUserJson(int slimeIndex, const string& userID, int slimeStr)
 {
-	return "{\"text\":\"슬라임" + to_string(slimeIndex) + " 이/가 " + userID + " 을/를 공격해서 데미지 " + to_string(slimeStr) + " 을/를 가했습니다.\"}";
+	return "{\"" + string(TEXT) + "\":\"슬라임" + to_string(slimeIndex) + " 이/가 " + userID + " 을/를 공격해서 데미지 " + to_string(slimeStr) + " 을/를 가했습니다.\"}";
 }
 
 string Json::GetUserAttackSlimeJson(const string& userID, int slimeIndex, int userStr)
 {
-	return "{\"text\":\"" + userID + " 이/가 슬라임" + to_string(slimeIndex) + " 을/를 공격해서 데미지 " + to_string(userStr) + " 을/를 가했습니다.\"}";
+	return "{\"" + string(TEXT) + "\":\"" + userID + " 이/가 슬라임" + to_string(slimeIndex) + " 을/를 공격해서 데미지 " + to_string(userStr) + " 을/를 가했습니다.\"}";
 }
 
 string Json::GetSlimeDieJson(int slimeIndex, const string& userID)
 {
-	return "{\"text\":\"슬라임" + to_string(slimeIndex) + " 이/가 " + userID + " 에 의해 죽었습니다.\"}";
+	return "{\"" + string(TEXT) + "\":\"슬라임" + to_string(slimeIndex) + " 이/가 " + userID + " 에 의해 죽었습니다.\"}";
 }
 
 string Json::GetUserDieJson(const string& userID, int slimeIndex)
 {
-	return "{\"text\":\"" + userID + " 이/가 슬라임" + to_string(slimeIndex) + " 에 의해 죽었습니다.\",\"userid\":\"" + userID + "\", \"error\":\"" + to_string(int(M_Type::E_DIE)) + "\"}";
+	return "{\"" + string(TEXT) + "\":\"" + userID + " 이/가 슬라임" + to_string(slimeIndex) + " 에 의해 죽었습니다.\",\"" + string(PARAM1) + "\":\"" + to_string(int(M_Type::E_DIE)) + "\",\"" + string(PARAM2) + "\":\"" + userID + "\"}";
+
+	return "{\"" + string(TEXT) + "\":\"" + userID + " 이/가 슬라임" + to_string(slimeIndex) + " 에 의해 죽었습니다.\",\"" + string(PARAM1) + "\":\"" + userID + "\",\"" + string(PARAM2) + "\":\"" + to_string(int(M_Type::E_DIE)) + "\"}";
 }
 
 string Json::GetMoveRespJson(const string& userID)
 {
-	return "{\"text\":\"(" + Redis::GetLocationX(userID) + "," + Redis::GetLocationY(userID) + ")로 이동했다.\"}";
+	return "{\"" + string(TEXT) + "\":\"(" + Redis::GetLocationX(userID) + "," + Redis::GetLocationY(userID) + ")로 이동했다.\"}";
 }
 
 string Json::GetTextOnlyJson(const string& text)
 {
-	return "{\"text\":\"" + text + "\"}";
+	return "{\"" + string(TEXT) + "\":\"" + text + "\"}";
 }
 
 string Json::GetDupConnectionJson()
 {
-	return "{\"text\":\"다른 클라이언트에서 동일한 아이디로 로그인했습니다.\",\"error\":\"" + to_string(int(M_Type::E_DUP_CONNECTION)) + "\"}";
+	return "{\"" + string(TEXT) + "\":\"다른 클라이언트에서 동일한 아이디로 로그인했습니다.\",\"" + string(PARAM1) + "\":\"" + to_string(int(M_Type::E_DUP_CONNECTION)) + "\"}";
 }
 
 string Json::GetUsersRespJson(const string& userID)
 {
 	// 해당 명령 보낸 클라이언트 우선 출력
-	string msg = "{\"text\":\"" + userID + " : (" + Redis::GetLocationX(userID) + ", " + Redis::GetLocationY(userID) + ")\\r\\n";
+	string msg = "{\"" + string(TEXT) + "\":\"" + userID + " : (" + Redis::GetLocationX(userID) + ", " + Redis::GetLocationY(userID) + ")\\r\\n";
 
 	// 다른 클라이언트들의 위치
 	for (auto& entry : Server::activeClients)
@@ -1038,7 +1188,7 @@ string Json::GetUsersRespJson(const string& userID)
 
 string Json::GetMonstersRespJson()
 {
-	string msg = "{\"text\":\"";
+	string msg = "{\"" + string(TEXT) + "\":\"";
 	for (auto& slime : Logic::slimes)
 	{
 		msg += "Slime" + to_string(slime->index) + " : (" + to_string(slime->locX) + ", " + to_string(slime->locY) + ")\\r\\n";
@@ -1050,32 +1200,5 @@ string Json::GetMonstersRespJson()
 
 string Json::GetChatRespJson(const string& userID, const string& text)
 {
-	return "{\"text\":\"" + userID + "(으)로 부터 온 메시지 : " + text + "\"}";
+	return "{\"" + string(TEXT) + "\":\"" + userID + "(으)로 부터 온 메시지 : " + text + "\"}";
 }
-
-//bool isRepeat = false;
-//void SendDataRepeat()
-//{
-//	std::this_thread::sleep_for(std::chrono::seconds(7));
-//
-//	while (1)
-//	{
-//		{
-//			lock_guard<mutex> lg(Server::activeClientsMutex);
-//
-//			for (auto& entry : Server::activeClients)
-//			{
-//				if (entry.second->doingProc.load() == false)
-//				{
-//					cout << "repeated send set : " << entry.first << '\n';
-//					entry.second->sendTurn = true;
-//					entry.second->sendPacket = string("repeated data");
-//					entry.second->packetLen = htonl(entry.second->sendPacket.length());
-//					isRepeat = true;
-//				}
-//			}
-//		}
-//
-//		this_thread::sleep_for(chrono::seconds(4));
-//	}
-//}

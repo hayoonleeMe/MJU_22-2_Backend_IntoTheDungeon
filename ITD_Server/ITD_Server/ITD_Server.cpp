@@ -101,7 +101,7 @@ bool processClient(shared_ptr<Client> client)
         {
             cout << "[" << activeSock << "] Received " << client->packetLen << " bytes" << endl;
 
-            // TODO: 클라이언트로부터 받은 텍스트에 따라 로직 수행
+            // 클라이언트로부터 받은 명령어에 따라 로직 수행
             const string json = string(client->packet).substr(0, client->packetLen);
 
             Document document;
@@ -110,7 +110,7 @@ bool processClient(shared_ptr<Client> client)
             // 명령어
             Value& text = document[Json::TEXT];
 
-            // 첫 로그인
+            // 클라이언트의 로그인 시도
             if (strcmp(text.GetString(), Json::LOGIN) == 0)
             {
                 client->sendPacket = Redis::RegisterUser(string(document[Json::PARAM1].GetString()));
@@ -126,13 +126,17 @@ bool processClient(shared_ptr<Client> client)
                 if (document.HasMember(Json::PARAM1))
                 {
                     job.param1 = document[Json::PARAM1].GetString();
-                    job.param2 = document[Json::PARAM2].GetString();
+
+                    if (document.HasMember(Json::PARAM2))
+                    {
+                        job.param2 = document[Json::PARAM2].GetString();
+                    }
                 }
 
                 client->sendPacket = (Logic::handlers[text.GetString()])(client, job);
             }
 
-            // 보낼 패킷 설정 
+            // 보낼 패킷이 존재하면 보내도록 설정 
             if (client->sendPacket != "")
                 client->sendTurn = true;
             else
@@ -232,6 +236,8 @@ void workerThreadProc()
             if (successful == false) 
             {
                 closesocket(activeSock);
+                Redis::ExpireUser(client->ID);
+
                 {
                     lock_guard<mutex> lg(Server::activeClientsMutex);
 
@@ -387,8 +393,8 @@ int main()
                     // 이 클라이언트가 데이터를 보낼 차례가 아니면
                     else
                     {
-                        // 작업해야할 것이 아무것도 없는 클라이언트이므로 보내야하는 패킷이 있다면 보내도록 설정해준다.
-                        if (!Logic::shouldSendPackets[client->sock].empty())
+                        // 로그인된 클라이언트가 작업해야할 것이 아무것도 없는 클라이언트이므로 보내야하는 패킷이 있다면 보내도록 설정해준다.
+                        if (client->ID != "" && !Logic::shouldSendPackets[client->sock].empty())
                         {
                             {
                                 lock_guard<mutex> lg(Logic::shouldSendPacketsMutex);
@@ -474,6 +480,9 @@ int main()
                     // 소켓을 닫는다.
                     closesocket(activeSock);
 
+                    // 모든 키를 Expire한다.
+                    Redis::ExpireUser(client->ID);
+
                     // 지울 대상에 포함시킨다.
                     toDelete.push_back(activeSock);
 
@@ -512,7 +521,8 @@ int main()
                         Server::jobQueue.push(client);
 
                         // 무의미하게 CV 를 notify하지 않도록 큐의 길이가 0에서 1이 되는 순간 notify 를 하도록 하자.
-                        if (wasEmpty) {
+                        if (wasEmpty) 
+                        {
                             Server::jobQueueFilledCv.notify_one();
                         }
                     }

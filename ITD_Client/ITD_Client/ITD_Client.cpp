@@ -14,6 +14,9 @@ void RecvThreadProc()
 
 int main()
 {
+    // Handler Map 초기화
+    Json::InitHandlers();
+
     int r = 0;
 
     // Winsock 을 초기화한다.

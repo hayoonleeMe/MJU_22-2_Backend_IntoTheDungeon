@@ -3,24 +3,24 @@
 #define RAPIDJSON_HAS_STDSTRING 1
 #include "rapidjson/document.h"
 
+#include <functional>
 #include <string>
 #include <iostream>
 #include <list>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <thread>
 #include <WinSock2.h>
 #include <WS2tcpip.h>
 
-using namespace std;
 using namespace rapidjson;
-
-#include <windows.h>
+using namespace std;
 
 // ws2_32.lib 를 링크한다.
 #pragma comment(lib, "Ws2_32.lib")
 
-// 클라이언트 구동 관련
+// 클라이언트 구동 관련 네임스페이스
 namespace Client
 {
 	static const char* SERVER_ADDRESS = "127.0.0.1";
@@ -31,7 +31,7 @@ namespace Client
 	string ID;
 }
 
-// 내부 로직 관련
+// 내부 로직 관련 네임스페이스
 namespace Logic
 {
 	// 서버로 데이터를 보낸다.
@@ -50,6 +50,10 @@ namespace Logic
 	void ExitProgram();
 }
 
+/// <summary> json 관련 네임스페이스
+/// json 문자열의 첫번째 키는 TEXT, 이후 키들은 순서대로 PARAM1, PARAM2이다.
+/// 메시지 타입이 있는 경우 두번째 키인 PARAM1의 value로 제공된다.
+/// </summary>
 namespace Json
 {
 	enum class M_Type
@@ -58,10 +62,41 @@ namespace Json
 		E_DUP_CONNECTION,
 	};
 
-	// json recv key
+	typedef function<string(string)> Handler;
+	map<string, Handler> handlers;
+
+	// json key
 	static const char* TEXT = "text";
-	static const char* M_ERROR = "error";
-	static const char* USER_ID = "userid";
+	static const char* PARAM1 = "param1";
+	static const char* PARAM2 = "param2";
+
+	static const char* LOGIN = "login";
+	static const char* MOVE = "move";
+	static const char* ATTACK = "attack";
+	static const char* MONSTERS = "monsters";
+	static const char* USERS = "users";
+	static const char* CHAT = "chat";
+	static const char* USE_POTION = "usepotion";
+	static const char* HP_POTION = "hp";
+	static const char* STR_POTION = "str";
+
+	// handlers에 저장되는, key가 하나이고 value가 input인 json 문자열 반환하는 함수
+	string GetJson(const string& input);
+
+	// key가 두개고 value가 input, param1인 json 문자열 반환하는 함수
+	string GetParamsJson(const string& input, const string& param1);
+
+	// key가 세개고 value가 input, param1, param2인 json 문자열 반환하는 함수
+	string GetParamsJson(const string& input, const string& param1, const string& param2);
+
+	// handlers에 저장되는, 문자열 하나를 입력받아 key가 2개인 json 문자열 반환하는 함수
+	string GetOneParamJson(const string& input);
+
+	// handlers에 저장되는, 문자열 두개를 입력받아 key가 3개인 json 문자열 반환하는 함수
+	string GetTwoParamsJson(const string& input);
+
+	// handlers 초기화하는 함수
+	void InitHandlers();
 }
 
 
@@ -161,21 +196,21 @@ bool Logic::ReceiveData()
 	//cout << "Received text : " << document["text"].GetString() << '\n';
 	cout << document[Json::TEXT].GetString() << '\n';
 
-	// 받은 메세지가 문제를 알리는 메시지인지 확인
-	if (document.HasMember(Json::M_ERROR))
+	// 받은 메세지가 메시지 타입이 존재하면
+	if (document.HasMember(Json::PARAM1))
 	{
 		// 유저가 죽은 것을 알리는 메시지일 때
-		if (Json::M_Type(stoi(document[Json::M_ERROR].GetString())) == Json::M_Type::E_DIE)
+		if (Json::M_Type(stoi(document[Json::PARAM1].GetString())) == Json::M_Type::E_DIE)
 		{
 			//cout << "Receive Die message\n";
 			// 죽은 클라이언트가 본 클라이언트라면 프로그램 종료
-			if (document[Json::USER_ID].GetString() == Client::ID)
+			if (document[Json::PARAM2].GetString() == Client::ID)
 			{
 				ExitProgram();
 			}
 		}
 		// 다른 클라이언트에서 동일한 아이디로 로그인했을 때 프로그램 종료
-		else if (Json::M_Type(stoi(document[Json::M_ERROR].GetString())) == Json::M_Type::E_DUP_CONNECTION)
+		else if (Json::M_Type(stoi(document[Json::PARAM1].GetString())) == Json::M_Type::E_DUP_CONNECTION)
 		{
 			//cout << "Receive Dup Connection message\n";
 			ExitProgram();
@@ -190,33 +225,27 @@ string Logic::GetInputTextJson()
 	string input;
 	cin >> input;
 
-	string text = "{\"text\":\"" + input + "\"";
-
-	if (input == "move" || input == "chat")
+	// input 명령어가 존재하면
+	if (Json::handlers.find(input) != Json::handlers.end())
 	{
-		string x, y;
-
-		cin >> x >> y;
-
-		text += ",\"first\":\"" + x + "\",\"second\":\"" + y + "\"";
-	}
-	else if (input != "attack" && input != "monsters" && input != "users" && input != "bot")
-	{
-		return "";
+		return (Json::handlers[input])(input);
 	}
 
-	text += "}";
-	return text;
+	// input이 명령어가 아니라면
+	return "";
 }
 
 void Logic::Login()
 {
 	cout << "로그인 시작\n" << "아이디를 입력하세요.\n";
+
 	string ID;
 	cin >> ID;
+
+	// ID 저장
 	Client::ID = ID;
 
-	string text = "{\"text\":\"login\",\"first\":\"" + ID + "\"}";
+	string text = Json::GetParamsJson(Json::LOGIN, ID);
 
 	SendData(text);
 }
@@ -236,4 +265,47 @@ void Logic::ExitProgram()
 	WSACleanup();
 
 	exit(0);
+}
+
+
+// namespace Json definition
+string Json::GetJson(const string& input)
+{
+	return "{\"" + string(TEXT) + "\":         \"" + input + "\"}";
+}
+
+string Json::GetParamsJson(const string& input, const string& param1)
+{
+	return "{\"" + string(TEXT) + "\":\"" + input + "\",\"" + string(PARAM1) + "\":\"" + param1 + "\"}";
+}
+
+string Json::GetParamsJson(const string& input, const string& param1, const string& param2)
+{
+	return "{\"" + string(TEXT) + "\":\"" + input + "\",\"" + string(PARAM1) + "\":\"" + param1 + "\",\"" + string(PARAM2) + "\":\"" + param2 + "\"}";
+}
+
+string Json::GetOneParamJson(const string& input)
+{
+	string param1;
+	cin >> param1;
+
+	return GetParamsJson(input, param1);
+}
+
+string Json::GetTwoParamsJson(const string& input)
+{
+	string param1, param2;
+	cin >> param1 >> param2;
+
+	return GetParamsJson(input, param1, param2);
+}
+
+void Json::InitHandlers()
+{
+	handlers[MOVE] = GetTwoParamsJson;
+	handlers[ATTACK] = GetJson;
+	handlers[MONSTERS] = GetJson;
+	handlers[USERS] = GetJson;
+	handlers[CHAT] = GetTwoParamsJson;
+	handlers[USE_POTION] = GetOneParamJson;
 }
