@@ -246,6 +246,7 @@ void workerThreadProc()
     }
 }
 
+// 1분마다 슬라임의 수가 최대 수만큼 존재하도록 생성하는 함수
 void SlimeGenerateThread()
 {
     cout << "In SlimeGenerateThread, " << Logic::MAX_NUM_OF_SLIME << " 마리 생성\n";
@@ -261,6 +262,7 @@ void SlimeGenerateThread()
     }
 }
 
+// 슬라임이 5초마다 공격할 수 있는 유저에게 공격 수행하는 함수
 void SlimeAttackCheckThread()
 {
     while (true)

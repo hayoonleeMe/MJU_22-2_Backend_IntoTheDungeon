@@ -28,6 +28,7 @@ using namespace rapidjson;
 // ws2_32.lib 를 링크한다.
 #pragma comment(lib, "Ws2_32.lib")
 
+// Slime 전방선언
 class Slime;
 
 // 서버로 로그인된 유저 클라이언트
@@ -38,39 +39,39 @@ public:
 
 	~Client();
 
+	// 유저가 공격받을 때 호출되는 메소드
 	int OnAttack(const shared_ptr<Slime>& slime);
-	//bool IsDead();
 
 public:
-	SOCKET sock;  // 이 클라이언트의 active socket
-	string ID;	// 로그인된 유저의 ID
+	SOCKET sock;			// 이 클라이언트의 active socket
+	string ID;				// 로그인된 유저의 ID
 
-	atomic<bool> doingProc;
-	char packet[65536];  // 최대 64KB 로 패킷 사이즈 고정
-	string sendPacket;
-	bool sendTurn;
-	bool lenCompleted;
-	int packetLen;
-	int offset;
-	bool shouldTerminate;
+	atomic<bool> doingProc;	// 현재 클라이언트가 처리 중인지를 나타내는 atomic 변수
+	char packet[65536];		// 최대 64KB 로 패킷 사이즈 고정
+	string sendPacket;		// 클라이언트로 보내질 데이터
+	bool sendTurn;			// 클라이언트로 보낼 차례인지 나타내는 상태변수
+	bool lenCompleted;		// 클라이언트가 보낼 데이터의 길이를 모두 받았는지 나타내는 상태변수
+	int packetLen;			// 받은/보낼 데이터의 길이
+	int offset;				// 현재까지 받은/보낸 길이 오프셋
+	bool shouldTerminate;	// 클라이언트가 접속 종료되어야 하는지 나타내는 상태변수
 
-	static const int MAX_X_ATTACK_RANGE = 1;
-	static const int MIN_X_ATTACK_RANGE = -1;
-	static const int MAX_Y_ATTACK_RANGE = 1;
-	static const int MIN_Y_ATTACK_RANGE = -1;
+	static const int MAX_X_ATTACK_RANGE = 1;	// X축 최대 공격 범위
+	static const int MIN_X_ATTACK_RANGE = -1;	// X축 최소 공격범위
+	static const int MAX_Y_ATTACK_RANGE = 1;	// Y축 최대 공격범위
+	static const int MIN_Y_ATTACK_RANGE = -1;	// Y축 최소 공격범위
 };
 
 // 서버 구동 관련 네임스페이스
 namespace Server
 {
-	static const char* SERVER_ADDRESS = "127.0.0.1";
-	static const unsigned short SERVER_PORT = 27015;
-	static const int NUM_WORKER_THREADS = 10;
-	map<SOCKET, shared_ptr<Client>> activeClients;
-	mutex activeClientsMutex;
-	queue<shared_ptr<Client>> jobQueue;
-	mutex jobQueueMutex;
-	condition_variable jobQueueFilledCv;
+	static const char* SERVER_ADDRESS = "127.0.0.1";	// 서버 주소
+	static const unsigned short SERVER_PORT = 27015;	// 서버 포트
+	static const int NUM_WORKER_THREADS = 10;			// 쓰레드 개수
+	map<SOCKET, shared_ptr<Client>> activeClients;		// 연결된 클라이언트
+	mutex activeClientsMutex;							// activeClients 뮤텍스
+	queue<shared_ptr<Client>> jobQueue;					// 작업 큐
+	mutex jobQueueMutex;								// jobQueue 뮤텍스
+	condition_variable jobQueueFilledCv;				// jobQueue condition_variable
 
 	// ID를 가진 기존의 접속을 모두 종료한다.
 	void TerminateRemainUser(const string& ID);
@@ -88,46 +89,55 @@ namespace Logic
 
 	typedef function<string(shared_ptr<Client>, Logic::ParamsForProc)> Handler;
 
-	static const int NUM_DUNGEON_X = 30;
-	static const int NUM_DUNGEON_Y = 30;
+	static const int NUM_DUNGEON_X = 30;			// 던전 X축 크기
+	static const int NUM_DUNGEON_Y = 30;			// 던전 Y축 크기
 
-	static const int SLIME_GEN_PERIOD = 60;
-	static const int MAX_NUM_OF_SLIME = 10;
+	static const int SLIME_GEN_PERIOD = 60;			// 슬라임 생성 주기
+	static const int MAX_NUM_OF_SLIME = 10;			// 최대 슬라임 수
 
-	static const int NUM_POTION_TYPE = 2;
+	static const int NUM_POTION_TYPE = 2;			// 포션 타입 수
 
+	// 포션 타입을 나타내는 enum class
 	enum class PotionType
 	{
 		E_POTION_HP,
 		E_POTION_STR,
 	};
 
-	map<SOCKET, list<string>> shouldSendPackets;
-	mutex shouldSendPacketsMutex;
+	map<SOCKET, list<string>> shouldSendPackets;	// 예약된 보내야하는 메시지
+	mutex shouldSendPacketsMutex;					// shouldSendPackets 뮤텍스
 
-	map<string, Handler> handlers;
+	map<string, Handler> handlers;					// Process 함수 맵
 
-	list<shared_ptr<Slime>> slimes;
-	mutex slimesMutex;
+	list<shared_ptr<Slime>> slimes;					// 슬라임들을 저장하는 리스트
+	mutex slimesMutex;								// slimes 뮤텍스
 
+	// value를 minValue~maxValue 사이로 조정하여 반환하는 함수
 	int Clamp(int value, int minValue, int maxValue)
 	{
 		int result = min(max(minValue, value), maxValue);
 		return result;
 	}
 
+	// message를 모든 클라이언트에게 보내도록 예약하는 함수
 	void BroadcastToClients(const string& message, const string& exceptID = "");
 
+	// move 명령어를 처리하는 함수
 	string ProcessMove(const shared_ptr<Client>& client, const ParamsForProc& job);
+	// attack 명령어를 처리하는 함수
 	string ProcessAttack(const shared_ptr<Client>& client, const ParamsForProc& job);
+	// monsters 명령어를 처리하는 함수
 	string ProcessMonsters(const shared_ptr<Client>& client, const ParamsForProc& job);
+	// users 명령어를 처리하는 함수
 	string ProcessUsers(const shared_ptr<Client>& client, const ParamsForProc& job);
+	// chat 명령어를 처리하는 함수
 	string ProcessChat(const shared_ptr<Client>& client, const ParamsForProc& job);
+	// handlers 초기화하는 함수
 	void InitHandlers();
 
+	// 슬라임을 num만큼 스폰하는 함수
 	void SpawnSlime(int num);
 }
-
 
 // 슬라임 클래스
 class Slime
@@ -135,62 +145,68 @@ class Slime
 public:
 	Slime();
 
-	~Slime()
-	{
-		cout << "Slime" << index << " is dead\n";
-	}
-
+	// 슬라임이 공격받을 때 호출되는 함수
 	int OnAttack(const shared_ptr<Client>& client);
 
+	// 슬라임이 죽었는지를 반환하는 함수
 	bool IsDead();
 
 public:
-	int index;
-	int locX;
-	int locY;
-	int hp;
-	int str;
-	Logic::PotionType potionType;
+	int index;									// 슬라임을 구별하는 인덱스
+	int locX;									// x축 위치
+	int locY;									// y축 위치
+	int hp;										// hp, 5~10 사이 랜덤
+	int str;									// str, 3~5 사이 랜덤
+	Logic::PotionType potionType;				// 지니고 있는 포션의 타입
 
-	static int slimeIndex;
-	static const int MAX_X_ATTACK_RANGE = 1;
-	static const int MIN_X_ATTACK_RANGE = -1;
-	static const int MAX_Y_ATTACK_RANGE = 1;
-	static const int MIN_Y_ATTACK_RANGE = -1;
-	static const int ATTACK_PERIOD = 5;
-	static const int MIN_HP = 5;
-	static const int MAX_HP = 10;
-	static const int MIN_STR = 3;
-	static const int MAX_STR = 5;
+	static int slimeIndex;						// 생성될 때마다 1씩 증가하는 static 인덱스
+	static const int MAX_X_ATTACK_RANGE = 1;	// x축 최대 공격범위
+	static const int MIN_X_ATTACK_RANGE = -1;	// x축 최소 공격범위
+	static const int MAX_Y_ATTACK_RANGE = 1;	// y축 최대 공격범위
+	static const int MIN_Y_ATTACK_RANGE = -1;	// y축 최소 공격범위
+	static const int ATTACK_PERIOD = 5;			// 공격 주기
+	static const int MIN_HP = 5;				// 최소 hp
+	static const int MAX_HP = 10;				// 최대 hp
+	static const int MIN_STR = 3;				// 최소 str
+	static const int MAX_STR = 5;				// 최대 str
 };
+// static 변수 slimeIndex 초기화
 int Slime::slimeIndex = 0;
 
 // 난수 관련 네임스페이스
 namespace Rand
 {
-	// random
+	// random 변수들
 	random_device rd;
 	mt19937 gen(rd());
+	// 던전 범위 내의 정수
 	uniform_int_distribution<int> locDis(0, Logic::NUM_DUNGEON_X - 1);
+	// 슬라임 hp 범위 내의 정수
 	uniform_int_distribution<int> slimeHpDis(Slime::MIN_HP, Slime::MAX_HP);
+	// 슬라임 str 범위 내의 정수
 	uniform_int_distribution<int> slimeStrDis(Slime::MIN_STR, Slime::MAX_STR);
+	// 포션 타입 범위 내의 정수
 	uniform_int_distribution<int> potionTypeDis(0, Logic::NUM_POTION_TYPE - 1);
 
+	// 던전 범위 내의 랜덤 위치 반환
 	int GetRandomLoc() 
 	{
 		return locDis(gen);
 	}
 
+	// 슬라임 랜덤 hp 반환
 	int GetRandomSlimeHp()
 	{
 		return slimeHpDis(gen);
 	}
 
+	// 슬라임 랜덤 str 반환
 	int GetRandomSlimeStr()
 	{
 		return slimeStrDis(gen);
 	}
 
+	// 랜덤 포션 타입 반환
 	int GetRandomPotionType()
 	{
 		return potionTypeDis(gen);
@@ -200,6 +216,7 @@ namespace Rand
 // json 관련 네임스페이스
 namespace Json
 {
+	// 메시지 타입을 나타내는 enum class
 	enum class M_Type
 	{
 		E_DIE,
@@ -257,31 +274,34 @@ namespace Redis
 	redisContext* redis;
 	mutex redisMutex;
 
+	// 사용할 함수 타입
 	enum class F_Type
 	{
 		E_ABSOLUTE,
 		E_RELATIVE
 	};
 
+	// ID가 존재할 때의 반환값
 	static const int EXIST_ID = 1;
 
 	// TODO : 키 만료 시간 수정 필요
-	static const char* EXPIRE_TIME = "30";
-	static const char* LOGINED = "1";
-	static const char* EXPIRED = "0";
+	static const char* EXPIRE_TIME = "30";			// 키 만료 시간
+	static const char* LOGINED = "1";				// USER:ID의 이미 로그인 중일 때의 value 값
+	static const char* EXPIRED = "0";				// USER:ID의 Expire 됐을 때의 value 값
 
-	static const char* LOC_X = ":location:x";
-	static const char* LOC_Y = ":location:y";
-	static const char* HP = ":hp";
-	static const char* STR = ":str";
-	static const char* POTION_HP = ":potions:hp";
-	static const char* POTION_STR = ":potions:str";
+	static const char* LOC_X = ":location:x";		// x축 위치의 redis 키
+	static const char* LOC_Y = ":location:y";		// y축 위치의 redis 키
+	static const char* HP = ":hp";					// hp의 redis 키
+	static const char* STR = ":str";				// str의 redis 키
+	static const char* POTION_HP = ":potions:hp";	// hp 포션의 redis 키
+	static const char* POTION_STR = ":potions:str";	// str 포션의 redis 키
 
-	static const int DEFAULT_HP = 30;
-	static const int DEFAULT_STR = 3;
-	static const int DEFAULT_POTION_HP = 1;
-	static const int DEFAULT_POTION_STR = 1;
+	static const int DEFAULT_HP = 30;				// 기본 hp
+	static const int DEFAULT_STR = 3;				// 기본 str
+	static const int DEFAULT_POTION_HP = 1;			// 기본 hp potion 개수
+	static const int DEFAULT_POTION_STR = 1;		// 기본 str potion 개수
 
+	// get USER:ID
 	string GetUserConnection(const string& ID)
 	{
 		string getCmd = "GET USER:" + ID;
@@ -298,6 +318,7 @@ namespace Redis
 		return "";
 	}
 
+	// get USER:ID:location:x
 	string GetLocationX(const string& ID)
 	{
 		string ret = "";
@@ -316,6 +337,7 @@ namespace Redis
 		return ret;
 	}
 
+	// get USER:ID:location:y
 	string GetLocationY(const string& ID)
 	{
 		string ret = "";
@@ -334,6 +356,7 @@ namespace Redis
 		return ret;
 	}
 
+	// get USER:ID:hp
 	string GetHp(const string& ID)
 	{
 		string ret = "";
@@ -352,6 +375,7 @@ namespace Redis
 		return ret;
 	}
 
+	// get USER:ID:str
 	string GetStr(const string& ID)
 	{
 		string ret = "";
@@ -370,6 +394,7 @@ namespace Redis
 		return ret;
 	}
 
+	// get USER:ID:potions:hp
 	string GetHpPotion(const string& ID)
 	{
 		string ret = "";
@@ -388,6 +413,7 @@ namespace Redis
 		return ret;
 	}
 
+	// get USER:ID:potions:str
 	string GetStrPotion(const string& ID)
 	{
 		string ret = "";
@@ -406,6 +432,7 @@ namespace Redis
 		return ret;
 	}
 
+	// set USER:ID status
 	void SetUserConnection(const string& ID, const char* status)
 	{
 		string setCmd = "SET USER:" + ID + " " + status;
@@ -422,6 +449,9 @@ namespace Redis
 		freeReplyObject(reply);
 	}
 
+	// set UESR:ID:location:x/y x/y
+	// t == E_ABSOLUTE : 바로 세팅
+	// t == E_RELATIVE : 현재값을 기준으로 세팅
 	void SetLocation(const string& ID, int x, int y, F_Type t = F_Type::E_ABSOLUTE)
 	{
 		string setCmd1, setCmd2;
@@ -460,6 +490,9 @@ namespace Redis
 		freeReplyObject(reply);
 	}
 	
+	// set USER:ID:hp hp
+	// t == E_ABSOLUTE : 바로 세팅
+	// t == E_RELATIVE : 현재값을 기준으로 세팅
 	void SetHp(const string& ID, int hp, F_Type t = F_Type::E_ABSOLUTE)
 	{
 		string setCmd;
@@ -489,6 +522,7 @@ namespace Redis
 		freeReplyObject(reply);
 	}
 
+	// set USER:ID:str str
 	void SetStr(const string& ID, int str)
 	{
 		string setCmd = "SET USER:" + ID + STR + " " + to_string(str);
@@ -505,6 +539,9 @@ namespace Redis
 		freeReplyObject(reply);
 	}
 
+	// set USER:ID:potions:hp numOfPotion
+	// t == E_ABSOLUTE : 바로 세팅
+	// t == E_RELATIVE : 현재값을 기준으로 세팅
 	void SetHpPotion(const string& ID, int numOfPotion, F_Type t = F_Type::E_ABSOLUTE)
 	{
 		string setCmd;
@@ -531,6 +568,9 @@ namespace Redis
 		freeReplyObject(reply);
 	}
 
+	// set USER:ID:potions:str numOfPotion
+	// t == E_ABSOLUTE : 바로 세팅
+	// t == E_RELATIVE : 현재값을 기준으로 세팅
 	void SetStrPotion(const string& ID, int numOfPotion, F_Type t = F_Type::E_ABSOLUTE)
 	{
 		string setCmd;
@@ -557,6 +597,7 @@ namespace Redis
 		freeReplyObject(reply);
 	}
 
+	// expire all key
 	void ExpireUser(const string& ID)
 	{
 		SetUserConnection(ID, EXPIRED);
