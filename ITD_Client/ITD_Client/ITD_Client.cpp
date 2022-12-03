@@ -23,14 +23,14 @@ int main()
     WSADATA wsaData;
     r = WSAStartup(MAKEWORD(2, 2), &wsaData);
     if (r != NO_ERROR) {
-        cerr << "WSAStartup failed with error " << r << endl;
+        cerr << "[오류] WSAStartup failed with error " << r << endl;
         return 1;
     }
 
     // TCP 소켓을 만든다.
     Client::sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (Client::sock == INVALID_SOCKET) {
-        cerr << "socket failed with error " << WSAGetLastError() << endl;
+        cerr << "[오류] socket failed with error " << WSAGetLastError() << endl;
         return false;
     }
 
@@ -47,7 +47,7 @@ int main()
     // TCP 소켓을 연결한다.
     r = connect(Client::sock, (sockaddr*)&serverAddr, sizeof(serverAddr));
     if (r == SOCKET_ERROR) {
-        cerr << "connect failed with error " << WSAGetLastError() << endl;
+        cerr << "[오류] connect failed with error " << WSAGetLastError() << endl;
         return false;
     }
 
@@ -73,7 +73,7 @@ int main()
     // Socket 을 닫는다.
     r = closesocket(Client::sock);
     if (r == SOCKET_ERROR) {
-        cerr << "closesocket failed with error " << WSAGetLastError() << endl;
+        cerr << "[오류] closesocket failed with error " << WSAGetLastError() << endl;
         return false;
     }
 

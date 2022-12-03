@@ -114,7 +114,7 @@ bool Logic::SendData(const string& text)
 	while (offset < 4) {
 		r = send(Client::sock, ((char*)&dataLenNetByteOrder) + offset, 4 - offset, 0);
 		if (r == SOCKET_ERROR) {
-			cerr << "failed to send length: " << WSAGetLastError() << endl;
+			cerr << "[오류] failed to send length: " << WSAGetLastError() << endl;
 			return false;
 		}
 		offset += r;
@@ -125,7 +125,7 @@ bool Logic::SendData(const string& text)
 	while (offset < dataLen) {
 		r = send(Client::sock, text.c_str() + offset, dataLen - offset, 0);
 		if (r == SOCKET_ERROR) {
-			cerr << "send failed with error " << WSAGetLastError() << endl;
+			cerr << "[오류] send failed with error " << WSAGetLastError() << endl;
 			return false;
 		}
 		//cout << "Sent " << r << " bytes" << endl;
@@ -146,13 +146,13 @@ bool Logic::ReceiveData()
 	while (offset < 4) {
 		r = recv(Client::sock, ((char*)&dataLenNetByteOrder) + offset, 4 - offset, 0);
 		if (r == SOCKET_ERROR) {
-			std::cerr << "recv failed with error " << WSAGetLastError() << std::endl;
+			std::cerr << "[오류] recv failed with error " << WSAGetLastError() << std::endl;
 			return false;
 		}
 		else if (r == 0) {
 			// 메뉴얼을 보면 recv() 는 소켓이 닫힌 경우 0 을 반환함을 알 수 있다.
 			// 따라서 r == 0 인 경우도 loop 을 탈출하게 해야된다.
-			std::cerr << "socket closed while reading length" << std::endl;
+			std::cerr << "[오류] socket closed while reading length" << std::endl;
 			return false;
 		}
 		offset += r;
@@ -163,7 +163,7 @@ bool Logic::ReceiveData()
 	// 혹시 우리가 받을 데이터가 64KB보다 큰지 확인한다.
 	if (dataLen > sizeof(Client::recvBuf))
 	{
-		cerr << "[" << Client::sock << "] Too big data: " << dataLen << endl;
+		cerr << "[오류] [" << Client::sock << "] Too big data: " << dataLen << endl;
 		return false;
 	}
 
@@ -174,7 +174,7 @@ bool Logic::ReceiveData()
 	while (offset < dataLen) {
 		r = recv(Client::sock, Client::recvBuf + offset, dataLen - offset, 0);
 		if (r == SOCKET_ERROR) {
-			std::cerr << "recv failed with error " << WSAGetLastError() << std::endl;
+			std::cerr << "[오류] recv failed with error " << WSAGetLastError() << std::endl;
 			return false;
 		}
 		else if (r == 0) {
@@ -257,7 +257,7 @@ void Logic::ExitProgram()
 	// Socket을 닫는다.
 	int r = closesocket(Client::sock);
 	if (r == SOCKET_ERROR) {
-		cerr << "closesocket failed with error " << WSAGetLastError() << endl;
+		cerr << "[오류] closesocket failed with error " << WSAGetLastError() << endl;
 		exit(1);
 	}
 

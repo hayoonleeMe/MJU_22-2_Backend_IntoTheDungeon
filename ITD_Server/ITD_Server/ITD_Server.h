@@ -43,17 +43,25 @@ public:
 	int OnAttack(const shared_ptr<Slime>& slime);
 
 public:
-	SOCKET sock;			// 이 클라이언트의 active socket
-	string ID;				// 로그인된 유저의 ID
+	SOCKET sock;								// 이 클라이언트의 active socket
+	string ID;									// 로그인된 유저의 ID
 
-	atomic<bool> doingProc;	// 현재 클라이언트가 처리 중인지를 나타내는 atomic 변수
-	char packet[65536];		// 최대 64KB 로 패킷 사이즈 고정
-	string sendPacket;		// 클라이언트로 보내질 데이터
-	bool sendTurn;			// 클라이언트로 보낼 차례인지 나타내는 상태변수
-	bool lenCompleted;		// 클라이언트가 보낼 데이터의 길이를 모두 받았는지 나타내는 상태변수
-	int packetLen;			// 받은/보낼 데이터의 길이
-	int offset;				// 현재까지 받은/보낸 길이 오프셋
-	bool shouldTerminate;	// 클라이언트가 접속 종료되어야 하는지 나타내는 상태변수
+	atomic<bool> doingProc;						// 현재 클라이언트가 처리 중인지를 나타내는 atomic 변수
+	char packet[65536];							// 최대 64KB 로 패킷 사이즈 고정
+	string sendPacket;							// 클라이언트로 보내질 데이터
+	bool sendTurn;								// 클라이언트로 보낼 차례인지 나타내는 상태변수
+	bool lenCompleted;							// 클라이언트가 보낼 데이터의 길이를 모두 받았는지 나타내는 상태변수
+	int packetLen;								// 받은/보낼 데이터의 길이
+	int offset;									// 현재까지 받은/보낸 길이 오프셋
+	bool shouldTerminate;						// 클라이언트가 접속 종료되어야 하는지 나타내는 상태변수
+
+	static const int DEFAULT_HP = 30;			// 기본 hp
+	static const int DEFAULT_STR = 3;			// 기본 str
+	static const int DEFAULT_POTION_HP = 1;		// 기본 hp potion 개수
+	static const int DEFAULT_POTION_STR = 1;	// 기본 str potion 개수
+
+	static const int MAX_HP = 30;				// 최대 hp
+	static const int MIN_HP = 0;				// 최소 hp
 
 	static const int MAX_X_ATTACK_RANGE = 1;	// X축 최대 공격 범위
 	static const int MIN_X_ATTACK_RANGE = -1;	// X축 최소 공격범위
@@ -178,10 +186,10 @@ public:
 	static const int MAX_Y_ATTACK_RANGE = 1;	// y축 최대 공격범위
 	static const int MIN_Y_ATTACK_RANGE = -1;	// y축 최소 공격범위
 	static const int ATTACK_PERIOD = 5;			// 공격 주기 (초)
-	static const int MIN_HP = 5;				// 최소 hp
-	static const int MAX_HP = 10;				// 최대 hp
-	static const int MIN_STR = 3;				// 최소 str
-	static const int MAX_STR = 5;				// 최대 str
+	static const int RAND_MIN_HP = 5;			// hp 최소 랜덤 범위
+	static const int RAND_MAX_HP = 10;			// hp 최대 랜덤 범위
+	static const int RAND_MIN_STR = 3;			// str 최소 랜덤 범위
+	static const int RAND_MAX_STR = 5;			// str 최대 랜덤 범위
 };
 // static 변수 slimeIndex 초기화
 int Slime::slimeIndex = 0;
@@ -195,9 +203,9 @@ namespace Rand
 	// 던전 범위 내의 정수
 	uniform_int_distribution<int> locDis(0, Logic::NUM_DUNGEON_X - 1);
 	// 슬라임 hp 범위 내의 정수
-	uniform_int_distribution<int> slimeHpDis(Slime::MIN_HP, Slime::MAX_HP);
+	uniform_int_distribution<int> slimeHpDis(Slime::RAND_MIN_HP, Slime::RAND_MAX_HP);
 	// 슬라임 str 범위 내의 정수
-	uniform_int_distribution<int> slimeStrDis(Slime::MIN_STR, Slime::MAX_STR);
+	uniform_int_distribution<int> slimeStrDis(Slime::RAND_MIN_STR, Slime::RAND_MAX_STR);
 	// 포션 타입 범위 내의 정수
 	uniform_int_distribution<int> potionTypeDis(0, Logic::NUM_POTION_TYPE - 1);
 
@@ -313,11 +321,6 @@ namespace Redis
 	static const char* STR = ":str";				// str의 redis 키
 	static const char* POTION_HP = ":potions:hp";	// hp 포션의 redis 키
 	static const char* POTION_STR = ":potions:str";	// str 포션의 redis 키
-
-	static const int DEFAULT_HP = 30;				// 기본 hp
-	static const int DEFAULT_STR = 3;				// 기본 str
-	static const int DEFAULT_POTION_HP = 1;			// 기본 hp potion 개수
-	static const int DEFAULT_POTION_STR = 1;		// 기본 str potion 개수
 
 	// get USER:ID
 	string GetUserConnection(const string& ID)
@@ -512,8 +515,6 @@ namespace Redis
 			setCmd2 = "SET USER:" + ID + LOC_Y + " " + to_string(newY);
 		}
 
-		cout << "setCmd1 : " << setCmd1 << " setCmd2 : " << setCmd2 << '\n';
-		
 		redisReply* reply; 
 		{
 			lock_guard<mutex> lg(redisMutex);
@@ -538,14 +539,12 @@ namespace Redis
 		string setCmd;
 		if (t == F_Type::E_ABSOLUTE)
 		{
-			// TODO : HP의 하한, 상한을 정해야 함
-			int newHp = Logic::Clamp(hp, 0, 30);
+			int newHp = Logic::Clamp(hp, Client::MIN_HP, Client::MAX_HP);
 			setCmd = "SET USER:" + ID + HP + " " + to_string(newHp);
 		}
 		else
 		{
-			// TODO : HP의 하한, 상한을 정해야 함
-			int newHp = Logic::Clamp(stoi(GetHp(ID)) + hp, 0, 30);
+			int newHp = Logic::Clamp(stoi(GetHp(ID)) + hp, Client::MIN_HP, Client::MAX_HP);
 			setCmd = "SET USER:" + ID + HP + " " + to_string(newHp);
 		}
 		
@@ -688,7 +687,6 @@ namespace Redis
 
 				if (reply->type == REDIS_REPLY_ERROR)
 					cout << "Redis Command Error : " << expireCmd << '\n';
-
 			}
 		}
 		freeReplyObject(reply);
@@ -743,7 +741,7 @@ namespace Redis
 				// 이미 아이디가 로그인 중일 때 기존의 접속 강제 종료
 				if (GetUserConnection(ID) == LOGINED)
 				{
-					cout << ID + " 이미 로그인 되어 있음\n";
+					cout << "[시스템] " << ID + " 이미 로그인 되어 있음\n";
 					ret = Json::GetTextOnlyJson("기존의 접속을 종료하고 로그인했습니다.");
 
 					// 기존 접속들을 강제 종료한다.
@@ -752,7 +750,7 @@ namespace Redis
 				// 종료 후 5분이 지나기 전에 재접속
 				else if (GetUserConnection(ID) == EXPIRED)
 				{
-					cout << ID + " 재접속함\n";
+					cout << "[시스템] " << ID + " 재접속함\n";
 					ret = Json::GetTextOnlyJson("로그인에 성공했습니다.");
 					PersistUser(ID);
 				}
@@ -760,16 +758,16 @@ namespace Redis
 			// USER:ID가 존재하지 않을 때
 			else
 			{
-				cout << "New User : " << ID << '\n';
+				cout << "[시스템] New User : " << ID << '\n';
 				ret = Json::GetTextOnlyJson("로그인에 성공했습니다.");
 
 				// redis에 등록
 				SetUserConnection(ID, LOGINED);
 				SetLocation(ID, Rand::GetRandomLoc(), Rand::GetRandomLoc());
-				SetHp(ID, DEFAULT_HP);
-				SetStr(ID, DEFAULT_STR);
-				SetHpPotion(ID, DEFAULT_POTION_HP);
-				SetStrPotion(ID, DEFAULT_POTION_STR);
+				SetHp(ID, Client::DEFAULT_HP);
+				SetStr(ID, Client::DEFAULT_STR);
+				SetHpPotion(ID, Client::DEFAULT_POTION_HP);
+				SetStrPotion(ID, Client::DEFAULT_POTION_STR);
 			}
 		}
 
@@ -830,16 +828,14 @@ Client::Client(SOCKET sock) : sock(sock), sendTurn(false), doingProc(false), len
 
 Client::~Client()
 {
-	cout << "Client destroyed. Socket: " << sock << endl;
+	cout << "[" << sock << "] Client destroyed\n";
 }
 
 int Client::OnAttack(const shared_ptr<Slime>& slime)
 {
-	cout << ID << " is On Attack by slime" << slime->index << '\n';
-
 	Redis::SetHp(ID, -1 * slime->str, Redis::F_Type::E_RELATIVE);
 
-	cout << "hayoon's remain hp : " << stoi(Redis::GetHp(ID)) << '\n';
+	cout << "[" << sock << "] " << ID << " is On Attack by slime" << slime->index << ", remain hp : " << stoi(Redis::GetHp(ID)) << '\n';
 
 	int nowHp = stoi(Redis::GetHp(ID));
 	if (nowHp <= 0)
@@ -867,18 +863,15 @@ void Logic::BroadcastToClients(const string& message, const string& exceptUser)
 	}
 }
 
-string Logic::ProcessMove(const shared_ptr<Client>& client, const ParamsForProc& job)
+string Logic::ProcessMove(const shared_ptr<Client>& client, const ParamsForProc& params)
 {
-	cout << "ProcessMove is called\n";
-	Redis::SetLocation(client->ID, stoi(job.param1), stoi(job.param2), Redis::F_Type::E_RELATIVE);
+	Redis::SetLocation(client->ID, stoi(params.param1), stoi(params.param2), Redis::F_Type::E_RELATIVE);
 
 	return Json::GetMoveRespJson(client->ID);
 }
 
-string Logic::ProcessAttack(const shared_ptr<Client>& client, const ParamsForProc& job)
+string Logic::ProcessAttack(const shared_ptr<Client>& client, const ParamsForProc& params)
 {
-	cout << "ProcessAttack is called\n";
-
 	string ret = "";			// 반환할 문자열
 	bool canAttack = false;		// 공격할 수 있는지
 
@@ -948,30 +941,24 @@ string Logic::ProcessAttack(const shared_ptr<Client>& client, const ParamsForPro
 	return ret;
 }
 
-string Logic::ProcessMonsters(const shared_ptr<Client>& client, const ParamsForProc& job)
+string Logic::ProcessMonsters(const shared_ptr<Client>& client, const ParamsForProc& params)
 {
-	cout << "ProcessMonsters is called\n";
-
 	return Json::GetMonstersRespJson();
 }
 
-string Logic::ProcessUsers(const shared_ptr<Client>& client, const ParamsForProc& job)
+string Logic::ProcessUsers(const shared_ptr<Client>& client, const ParamsForProc& params)
 {
-	cout << "ProcessUsers is called\n";
-
 	// 클라이언트의 위치
 	return Json::GetUsersRespJson(client->ID);
 }
 
-string Logic::ProcessChat(const shared_ptr<Client>& client, const ParamsForProc& job)
+string Logic::ProcessChat(const shared_ptr<Client>& client, const ParamsForProc& params)
 {
-	cout << "ProcessChat is called\n";
-
 	SOCKET toSock = -1;
 
 	// 유저를 찾기
 	for (auto& entry : Server::activeClients)
-		if (entry.second->ID == job.param1)
+		if (entry.second->ID == params.param1)
 		{
 			toSock = entry.first;
 			break;
@@ -985,21 +972,19 @@ string Logic::ProcessChat(const shared_ptr<Client>& client, const ParamsForProc&
 	{
 		lock_guard<mutex> lg(shouldSendPacketsMutex);
 
-		shouldSendPackets[toSock].push_back(Json::GetChatRespJson(job.param1, job.param2));
+		shouldSendPackets[toSock].push_back(Json::GetChatRespJson(params.param1, params.param2));
 	}
 
 	return Json::GetTextOnlyJson("메시지를 전송했습니다.");
 }
 
-string Logic::ProcessUsePotion(const shared_ptr<Client>& client, const ParamsForProc& job)
+string Logic::ProcessUsePotion(const shared_ptr<Client>& client, const ParamsForProc& params)
 {
 	string ret = "";
 
 	// hp potion 사용
-	if (job.param1 == Json::HP_POTION)
+	if (params.param1 == Json::HP_POTION)
 	{
-		cout << "ProcessUsePotion hp is called\n";
-
 		int numOfPotion = stoi(Redis::GetHpPotion(client->ID));
 
 		// hp potion이 존재할 때
@@ -1020,10 +1005,8 @@ string Logic::ProcessUsePotion(const shared_ptr<Client>& client, const ParamsFor
 		}
 	}
 	// str potion 사용
-	else if (job.param1 == Json::STR_POTION)
+	else if (params.param1 == Json::STR_POTION)
 	{
-		cout << "ProcessUsePotion str is called\n";
-
 		int numOfPotion = stoi(Redis::GetStrPotion(client->ID));
 
 		// str potion이 존재할 때
@@ -1115,10 +1098,10 @@ Slime::Slime()
 
 int Slime::OnAttack(const shared_ptr<Client>& client)
 {
-	cout << "slime" << index << " is On Attack by " << client->ID << '\n';
+	cout << "[시스템] 슬라임" << index << " is On Attack by " << client->ID << '\n';
 
 	int userStr = stoi(Redis::GetStr(client->ID));
-	hp = Logic::Clamp(hp - userStr, 0, MAX_HP);
+	hp = Logic::Clamp(hp - userStr, 0, RAND_MAX_HP);
 
 	return hp;
 }
@@ -1191,7 +1174,7 @@ string Json::GetMonstersRespJson()
 	string msg = "{\"" + string(TEXT) + "\":\"";
 	for (auto& slime : Logic::slimes)
 	{
-		msg += "Slime" + to_string(slime->index) + " : (" + to_string(slime->locX) + ", " + to_string(slime->locY) + ")\\r\\n";
+		msg += "슬라임" + to_string(slime->index) + " : (" + to_string(slime->locX) + ", " + to_string(slime->locY) + ")\\r\\n";
 	}
 	msg += "\"}";
 

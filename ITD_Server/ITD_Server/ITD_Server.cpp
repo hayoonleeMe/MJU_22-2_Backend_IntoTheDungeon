@@ -5,7 +5,7 @@ SOCKET createPassiveSocket()
     // TCP socket 을 만든다.
     SOCKET passiveSock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (passiveSock == INVALID_SOCKET) {
-        cerr << "socket failed with error " << WSAGetLastError() << endl;
+        cerr << "[오류] socket failed with error " << WSAGetLastError() << endl;
         return 1;
     }
 
@@ -18,13 +18,13 @@ SOCKET createPassiveSocket()
 
     int r = ::bind(passiveSock, (sockaddr*)&serverAddr, sizeof(serverAddr));
     if (r == SOCKET_ERROR) {
-        cerr << "bind failed with error " << WSAGetLastError() << endl;
+        cerr << "[오류] bind failed with error " << WSAGetLastError() << endl;
         return 1;
     }
 
     r = listen(passiveSock, 10);
     if (r == SOCKET_ERROR) {
-        cerr << "listen failed with error " << WSAGetLastError() << endl;
+        cerr << "[오류] listen failed with error " << WSAGetLastError() << endl;
         return 1;
     }
 
@@ -44,13 +44,13 @@ bool processClient(shared_ptr<Client> client)
             int r = recv(activeSock, (char*)&(client->packetLen) + client->offset, 4 - client->offset, 0);
             if (r == SOCKET_ERROR) 
             {
-                cerr << "recv failed with error " << WSAGetLastError() << endl;
+                cerr << "[오류] recv failed with error " << WSAGetLastError() << endl;
                 return false;
             }
             else if (r == 0) 
             {
                 // 메뉴얼을 보면 recv() 는 소켓이 닫힌 경우 0 을 반환함을 알 수 있다.
-                cerr << "Socket closed: " << activeSock << endl;
+                cerr << "[오류] Socket closed: " << activeSock << endl;
                 return false;
             }
             client->offset += r;
@@ -69,7 +69,7 @@ bool processClient(shared_ptr<Client> client)
             // 혹시 우리가 받을 데이터가 64KB보다 큰지 확인한다.
             if (client->packetLen > sizeof(client->packet)) 
             {
-                cerr << "[" << activeSock << "] Too big data: " << client->packetLen << endl;
+                cerr << "[오류] [" << activeSock << "] Too big data: " << client->packetLen << endl;
                 return false;
             }
 
@@ -87,7 +87,7 @@ bool processClient(shared_ptr<Client> client)
         int r = recv(activeSock, client->packet + client->offset, client->packetLen - client->offset, 0);
         if (r == SOCKET_ERROR) 
         {
-            cerr << "recv failed with error " << WSAGetLastError() << endl;
+            cerr << "[오류] recv failed with error " << WSAGetLastError() << endl;
             return false;
         }
         else if (r == 0) 
@@ -157,44 +157,47 @@ bool processClient(shared_ptr<Client> client)
     // 받은 패킷에 대한 응답을 보낸다.
     if (client->sendTurn)
     {   
-        cout << "Send Start to " << client->ID << '\n' << "send msg : " << client->sendPacket << '\n';
+        cout << "[" << activeSock << "] Send Start to " << client->ID << ", send msg : " << client->sendPacket << '\n';
 
+        // 데이터 길이를 보낸다.
         if (client->lenCompleted == false) 
         {
             int r = send(activeSock, (char*)&(client->packetLen) + client->offset, 4 - client->offset, 0);
             if (r == SOCKET_ERROR) 
             {
-                cerr << "send failed with error " << WSAGetLastError() << endl;
+                cerr << "[오류] send failed with error " << WSAGetLastError() << endl;
                 return false;
             }
             client->offset += r;
 
-            // 완성 못했다면 다음번에 계속 시도할 것이다.
+            // 모두 보내지 못했다면 다음번에 계속 시도할 것이다.
             if (client->offset < 4) 
             {
                 return true;
             }
 
-            // 이제 packetLen 을 완성했다고 기록하고 offset 을 초기화해준다.
+            // 이제 packetLen 을 모두 보냈다고 기록하고 offset 을 초기화해준다.
             client->lenCompleted = true;
             client->offset = 0;
             client->packetLen = ntohl(client->packetLen);
         }
 
-        // 여기까지 도달했다는 것은 packetLen 을 완성한 경우다. (== lenCompleted 가 true)
+        // 여기까지 도달했다는 것은 packetLen 을 모두 보낸 경우이다. (== lenCompleted 가 true)
         if (client->lenCompleted == false) 
         {
             return true;
         }
 
+        // 데이터를 보낸다.
         int r = send(activeSock, client->sendPacket.c_str() + client->offset, client->packetLen - client->offset, 0);
         if (r == SOCKET_ERROR) 
         {
-            cerr << "send failed with error " << WSAGetLastError() << endl;
+            cerr << "[오류] send failed with error " << WSAGetLastError() << endl;
             return false;
         }
         client->offset += r;
 
+        // 데이터를 모두 보냈다면
         if (client->offset == client->packetLen) 
         {
             cout << "[" << activeSock << "] Sent " << client->packetLen << " bytes" << endl;
@@ -205,8 +208,6 @@ bool processClient(shared_ptr<Client> client)
             client->offset = 0;
             client->packetLen = 0;
         }
-
-        return true;
     }
 
     return true;
@@ -255,13 +256,10 @@ void workerThreadProc()
 // 1분마다 슬라임의 수가 최대 수만큼 존재하도록 생성하는 함수
 void SlimeGenerateThread()
 {
-    cout << "In SlimeGenerateThread, " << Logic::MAX_NUM_OF_SLIME << " 마리 생성\n";
-    Logic::SpawnSlime(Logic::MAX_NUM_OF_SLIME);
-
     // 1분마다 슬라임 수가 10마리가 되도록 젠한다.
     while (true)
     {
-        cout << "In SlimeGenerateThread, " << Logic::MAX_NUM_OF_SLIME - Logic::slimes.size() << " 마리 생성\n";
+        cout << "[시스템] 슬라임 " << Logic::MAX_NUM_OF_SLIME - Logic::slimes.size() << " 마리 생성\n";
         Logic::SpawnSlime(Logic::MAX_NUM_OF_SLIME - Logic::slimes.size());
 
         this_thread::sleep_for(chrono::seconds(Logic::SLIME_GEN_PERIOD));
@@ -315,13 +313,14 @@ void SlimeAttackCheckThread()
 int main()
 {
     // hiredis 연결
+    // TODO : redis 연결 포트번호 수정 필요
     Redis::redis = redisConnect(Server::SERVER_ADDRESS, 6379);
     if (Redis::redis == NULL || Redis::redis->err)
     {
         if (Redis::redis)
-            printf("Error: %s\n", Redis::redis->errstr);
+            cerr << "[오류] " << Redis::redis->errstr << '\n';
         else
-            printf("Can't allocate redis context\n");
+            cout << "[오류] Can't allocate redis context\n";
         return 1;
     }
 
@@ -335,7 +334,7 @@ int main()
     r = WSAStartup(MAKEWORD(2, 2), &wsaData);
     if (r != NO_ERROR) 
     {
-        cerr << "WSAStartup failed with error " << r << endl;
+        cerr << "[오류] WSAStartup failed with error " << r << endl;
         return 1;
     }
 
@@ -425,7 +424,7 @@ int main()
         // 회복할 수 없는 오류이다. 서버를 중단한다.
         if (r == SOCKET_ERROR) 
         {
-            cerr << "select failed: " << WSAGetLastError() << endl;
+            cerr << "[오류] select failed: " << WSAGetLastError() << endl;
             break;
         }
 
@@ -440,14 +439,14 @@ int main()
         if (FD_ISSET(passiveSock, &readSet)) 
         {                                                                       
             // passive socket 을 이용해 accept() 를 한다.
-            cout << "Waiting for a connection" << endl;
+            cout << "[시스템] Waiting for a connection" << endl;
             struct sockaddr_in clientAddr;
             int clientAddrSize = sizeof(clientAddr);
             SOCKET activeSock = accept(passiveSock, (sockaddr*)&clientAddr, &clientAddrSize);
 
             if (activeSock == INVALID_SOCKET) 
             {
-                cerr << "accept failed with error " << WSAGetLastError() << endl;
+                cerr << "[오류] accept failed with error " << WSAGetLastError() << endl;
                 return 1;
             }
             else 
@@ -458,7 +457,7 @@ int main()
 
                 char strBuf[1024];
                 inet_ntop(AF_INET, &(clientAddr.sin_addr), strBuf, sizeof(strBuf));
-                cout << "New client from " << strBuf << ":" << ntohs(clientAddr.sin_port) << ". "
+                cout << "[시스템] New client from " << strBuf << ":" << ntohs(clientAddr.sin_port) << ". "
                     << "Socket: " << activeSock << endl;
             }
         }
@@ -475,7 +474,7 @@ int main()
 
                 if (FD_ISSET(activeSock, &exceptionSet))
                 {
-                    cerr << "Exception on socket " << activeSock << endl;
+                    cerr << "[오류] Exception on socket " << activeSock << endl;
 
                     // 소켓을 닫는다.
                     closesocket(activeSock);
@@ -561,7 +560,7 @@ int main()
     r = closesocket(passiveSock);
     if (r == SOCKET_ERROR) 
     {
-        cerr << "closesocket(passive) failed with error " << WSAGetLastError() << endl;
+        cerr << "[오류] closesocket(passive) failed with error " << WSAGetLastError() << endl;
         return 1;
     }
 
