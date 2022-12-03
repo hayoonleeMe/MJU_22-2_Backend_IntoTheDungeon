@@ -74,7 +74,7 @@ namespace Server
 {
 	static const char* SERVER_ADDRESS = "127.0.0.1";	// 서버 주소
 	static const unsigned short SERVER_PORT = 27015;	// 서버 포트
-	static const int NUM_WORKER_THREADS = 10;			// 쓰레드 개수
+	static const int NUM_WORKER_THREADS = 40;			// 쓰레드 개수
 	map<SOCKET, shared_ptr<Client>> activeClients;		// 연결된 클라이언트
 	mutex activeClientsMutex;							// activeClients 뮤텍스
 	queue<shared_ptr<Client>> jobQueue;					// 작업 큐
