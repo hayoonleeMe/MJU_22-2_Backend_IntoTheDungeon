@@ -996,7 +996,8 @@ string Logic::ProcessUsePotion(const shared_ptr<Client>& client, const ParamsFor
 			// hp 포션 개수 차감
 			Redis::SetHpPotion(client->ID, -1, Redis::F_Type::E_RELATIVE);
 
-			ret = Json::GetTextOnlyJson("체력이 10 증가했습니다.");
+			string raw = "Hp 포션을 1개 사용해 체력이 " + to_string(Logic::HP_POTION_HEAL) + "증가했습니다.";
+			ret = Json::GetTextOnlyJson(raw);
 		}
 		// hp potion이 존재하지 않을 때
 		else
@@ -1018,6 +1019,9 @@ string Logic::ProcessUsePotion(const shared_ptr<Client>& client, const ParamsFor
 
 			// str 포션 개수 차감
 			Redis::SetStrPotion(client->ID, -1, Redis::F_Type::E_RELATIVE);
+
+			string raw = "Str 포션 1개를 사용해 " + to_string(Logic::STR_POTION_DURATION) + "초 간 공격력이 " + to_string(Logic::STR_POTION_DAMAGE) + "만큼 증가합니다.";
+			ret = Json::GetTextOnlyJson(raw);
 		}
 		// str potion이 존재하지 않을 때
 		else
