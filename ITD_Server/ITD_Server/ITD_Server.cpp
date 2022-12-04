@@ -312,6 +312,9 @@ void SlimeAttackCheckThread()
 
 int main()
 {
+    // 프로그램 이름 설정
+    system("title Into The Dungeon Server");
+
     // hiredis 연결
     // TODO : redis 연결 포트번호 수정 필요
     Redis::redis = redisConnect(Server::SERVER_ADDRESS, 6379);

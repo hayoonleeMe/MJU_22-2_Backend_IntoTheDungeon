@@ -14,6 +14,9 @@ void RecvThreadProc()
 
 int main()
 {
+    // 프로그램 이름 설정
+    system("title Into The Dungeon Client");
+
     // Handler Map 초기화
     Json::InitHandlers();
 
