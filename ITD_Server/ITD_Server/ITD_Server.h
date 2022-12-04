@@ -248,6 +248,7 @@ namespace Json
 	{
 		E_DIE,
 		E_DUP_CONNECTION,
+		E_LOGIN_SUCCESS,
 	};
 
 	// json key
@@ -265,6 +266,9 @@ namespace Json
 	static const char* HP_POTION = "hp";
 	static const char* STR_POTION = "str";
 	static const char* INFO = "info";
+
+	// login success notify
+	string GetLoginSuccessJson(const string& text);
 
 	// Slime attack to user
 	string GetSlimeAttackUserJson(int slimeIndex, const string& userID, int slimeStr);
@@ -750,7 +754,7 @@ namespace Redis
 				{
 					cout << "[시스템] " << ID + " 이미 로그인 되어 있음\n";
 					string raw = "기존의 접속을 종료하고 로그인했습니다.\\r\\n" + ID + " 님이 접속했습니다.";
-					ret = Json::GetTextOnlyJson(raw);
+					ret = Json::GetLoginSuccessJson(raw);
 
 					// 기존 접속들을 강제 종료한다.
 					Server::TerminateRemainUser(ID);
@@ -760,7 +764,9 @@ namespace Redis
 				{
 					cout << "[시스템] " << ID + " 재접속함\n";
 					string raw = "로그인에 성공했습니다.\\r\\n" + ID + " 님이 접속했습니다.";
-					ret = Json::GetTextOnlyJson(raw);
+					ret = Json::GetLoginSuccessJson(raw);
+
+					// 접속 종료하여 expire된 키를 복구한다.
 					PersistUser(ID);
 				}
 			}
@@ -769,7 +775,7 @@ namespace Redis
 			{
 				cout << "[시스템] New User : " << ID << '\n';
 				string raw = "로그인에 성공했습니다.\\r\\n" + ID + " 님이 접속했습니다.";
-				ret = Json::GetTextOnlyJson(raw);
+				ret = Json::GetLoginSuccessJson(raw);
 
 				// redis에 등록
 				SetUserConnection(ID, LOGINED);
@@ -1142,6 +1148,11 @@ bool Slime::IsDead()
 }
 
 // namespace Json definition
+string Json::GetLoginSuccessJson(const string& text)
+{
+	return "{\"" + string(TEXT) + "\":\"" + text + "\",\"" + string(PARAM1) + "\":\"" + to_string(int(M_Type::E_LOGIN_SUCCESS)) + "\"}";
+}
+
 string Json::GetSlimeAttackUserJson(int slimeIndex, const string& userID, int slimeStr)
 {
 	return "{\"" + string(TEXT) + "\":\"[시스템] 슬라임" + to_string(slimeIndex) + " 이/가 " + userID + " 을/를 공격해서 데미지 " + to_string(slimeStr) + " 을/를 가했습니다.\"}";

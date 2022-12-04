@@ -35,6 +35,7 @@ namespace Logic
 {
 	static const char* QUIT = "quit";	// 종료 명령어
 	static const char* BOT = "bot";		// Bot 명령어
+	static const char* HELP = "help";	// help 명령어
 
 	static const int MOVE_DIS = 3;		// 유저가 한 축당 이동할 수 있는 칸 수
 
@@ -56,6 +57,9 @@ namespace Logic
 
 	// info 명령어를 서버로 보내는 함수
 	void Info();
+
+	// help 명령어를 통해 조작 도움말을 출력하는 함수
+	void Help();
 }
 
 /// <summary> json 관련 네임스페이스
@@ -69,6 +73,7 @@ namespace Json
 	{
 		E_DIE,
 		E_DUP_CONNECTION,
+		E_LOGIN_SUCCESS,
 	};
 
 	typedef function<bool(string&, const string&)> Handler;
@@ -247,6 +252,12 @@ bool Logic::ReceiveData()
 			//cout << "Receive Dup Connection message\n";
 			ExitProgram();
 		}
+		// 로그인 성공을 알리는 메시지일 때
+		else if (Json::M_Type(stoi(document[Json::PARAM1].GetString())) == Json::M_Type::E_LOGIN_SUCCESS)
+		{
+			// 조작 도움말을 출력한다.
+			Help();
+		}
 	}
 
 	return true;
@@ -257,9 +268,16 @@ bool Logic::GetInputTextJson(string& text)
 	string input;
 	cin >> input;
 
+	// 서버와 통신하지 않는 명령어, 서버에 보내지 않도록 false를 반환한다.
 	if (input == QUIT)
 	{
 		ExitProgram();
+		return false;
+	}
+	else if (input == HELP)
+	{
+		Help();
+		return false;
 	}
 
 	// input 명령어가 존재하면
@@ -284,7 +302,7 @@ void Logic::Login()
 		cin >> ID;
 
 		// ID가 명령어와 겹치지 않아야 사용가능
-		if (ID != Json::LOGIN && ID != Json::MOVE && ID != Json::ATTACK && ID != Json::MONSTERS && ID != Json::USERS && ID != Json::CHAT && ID != Json::USE_POTION && ID != Json::HP_POTION && ID != Json::STR_POTION && ID != Json::INFO && ID != Logic::QUIT && ID != Logic::BOT)
+		if (ID != Json::LOGIN && ID != Json::MOVE && ID != Json::ATTACK && ID != Json::MONSTERS && ID != Json::USERS && ID != Json::CHAT && ID != Json::USE_POTION && ID != Json::HP_POTION && ID != Json::STR_POTION && ID != Json::INFO && ID != Logic::QUIT && ID != Logic::BOT && ID != Logic::HELP)
 		{
 			// ID 저장
 			Client::ID = ID;
@@ -327,6 +345,23 @@ void Logic::Info()
 
 	if (!SendData(text))
 		ExitProgram();
+}
+
+void Logic::Help()
+{
+	cout << "\n[시스템] 조작 도움말\n";
+	cout << "move x y : 현재 위치로부터 x축으로 x만큼, y축으로 y만큼 이동합니다.\n";
+	cout << "attack : 공격 범위 내에 있는 슬라임들을 공격합니다.\n";
+	cout << "monsters : 현재 존재하는 슬라임들의 위치 정보를 출력합니다.\n";
+	cout << "users : 현재 접속한 유저들의 위치 정보를 출력합니다.\n";
+	cout << "chat user message : user에게 message라는 내용의 귓속말을 보냅니다.\n";
+	cout << "bot : 랜덤한 명령어를 1초마다 실행하는 봇 모드를 실행합니다.\n";
+	cout << "usepotion hp : HP 포션을 사용해 체력을 회복합니다.\n";
+	cout << "usepotion str : STR 포션을 사용해 공격력을 증가시킵니다.\n";
+	cout << "info : 유저 정보를 출력합니다.\n";
+	cout << "help : 조작 도움말을 출력합니다.\n";
+	cout << "quit : 프로그램을 종료합니다.\n";
+	cout << '\n';
 }
 
 
