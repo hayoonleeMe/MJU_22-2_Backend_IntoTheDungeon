@@ -54,6 +54,9 @@ int main()
     // 첫 로그인
     Logic::Login();
 
+    // 유저 정보 출력
+    Logic::Info();
+
     // cin으로 입력받은 텍스트를 JSON으로 변경해 서버로 전송한다.
     while (true) {
         string text = Logic::GetInputTextJson();

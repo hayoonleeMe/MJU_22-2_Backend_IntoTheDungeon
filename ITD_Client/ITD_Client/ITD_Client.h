@@ -48,6 +48,8 @@ namespace Logic
 
 	// 프로그램 종료 준비
 	void ExitProgram();
+
+	void Info();
 }
 
 /// <summary> json 관련 네임스페이스
@@ -79,6 +81,7 @@ namespace Json
 	static const char* USE_POTION = "usepotion";
 	static const char* HP_POTION = "hp";
 	static const char* STR_POTION = "str";
+	static const char* INFO = "info";
 
 	// handlers에 저장되는, key가 하나이고 value가 input인 json 문자열 반환하는 함수
 	string GetJson(const string& input);
@@ -237,7 +240,7 @@ string Logic::GetInputTextJson()
 
 void Logic::Login()
 {
-	cout << "로그인 시작\n" << "아이디를 입력하세요.\n";
+	cout << "[시스템] 로그인이 필요합니다.\n[시스템] 아이디를 입력하세요.\n";
 
 	string ID;
 	cin >> ID;
@@ -252,7 +255,7 @@ void Logic::Login()
 
 void Logic::ExitProgram()
 {
-	cout << "프로그램을 종료합니다.\n";
+	cout << "[시스템] 프로그램을 종료합니다.\n";
 
 	// Socket을 닫는다.
 	int r = closesocket(Client::sock);
@@ -265,6 +268,12 @@ void Logic::ExitProgram()
 	WSACleanup();
 
 	exit(0);
+}
+
+void Logic::Info()
+{
+	if (!SendData(Json::GetJson(Json::INFO)))
+		ExitProgram();
 }
 
 
@@ -308,4 +317,5 @@ void Json::InitHandlers()
 	handlers[USERS] = GetJson;
 	handlers[CHAT] = GetTwoParamsJson;
 	handlers[USE_POTION] = GetOneParamJson;
+	handlers[INFO] = GetJson;
 }
