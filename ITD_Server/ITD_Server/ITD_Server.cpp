@@ -259,7 +259,7 @@ void SlimeGenerateThread()
     // 1분마다 슬라임 수가 10마리가 되도록 젠한다.
     while (true)
     {
-        cout << "[시스템] 슬라임 " << Logic::MAX_NUM_OF_SLIME - Logic::slimes.size() << " 마리 생성\n";
+        cout << "[시스템] 슬라임 " << Logic::MAX_NUM_OF_SLIME - Logic::slimes.size() << "마리 생성\n";
         Logic::SpawnSlime(Logic::MAX_NUM_OF_SLIME - Logic::slimes.size());
 
         this_thread::sleep_for(chrono::seconds(Logic::SLIME_GEN_PERIOD));

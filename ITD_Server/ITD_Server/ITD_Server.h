@@ -1088,12 +1088,22 @@ void Logic::StrPotion(const shared_ptr<Client>& client)
 	// 현재 유저가 접속중인 상태라면 종료 메시지 예약
 	if (Redis::GetUserConnection(client->ID) == Redis::LOGINED)
 	{
-		// 종료 메시지 예약
+		// str 포션을 사용한 클라이언트가 접속 종료했다가 다시 접속했으면 기존 소켓과 다를 수 있기 때문에 새로 들어온 클라이언트 중에서 찾는다.
+		for (auto& entry : Server::activeClients)
 		{
-			lock_guard<mutex> lg(shouldSendPacketsMutex);
+			if (entry.second->shouldTerminate == false && entry.second->ID == client->ID)
+			{
+				// 찾은 클라이언트에게 종료 메시지 예약
+				{
+					lock_guard<mutex> lg(shouldSendPacketsMutex);
 
-			shouldSendPackets[client->sock].push_back(Json::GetTextOnlyJson("Str 증가 효과가 종료되었습니다."));
+					shouldSendPackets[entry.first].push_back(Json::GetTextOnlyJson("Str 증가 효과가 종료되었습니다."));
+				}
+				break;
+			}
 		}
+
+		
 	}
 	// 효과가 끝나기 전에 유저가 나가서 키가 Expire 된 상태일 때
 	else if (Redis::GetUserConnection(client->ID) == Redis::EXPIRED)

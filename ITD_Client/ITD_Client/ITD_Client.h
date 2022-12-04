@@ -23,35 +23,38 @@ using namespace std;
 // 클라이언트 구동 관련 네임스페이스
 namespace Client
 {
-	static const char* SERVER_ADDRESS = "127.0.0.1";
-	static const unsigned short SERVER_PORT = 27015;
-	SOCKET sock;	// TCP 소켓
-	mutex sockMutex;
-	char recvBuf[65536];
-	string ID;
+	static const char* SERVER_ADDRESS = "127.0.0.1";	// 연결할 서버 주소
+	static const unsigned short SERVER_PORT = 27015;	// 연결할 서버 포트번호
+	SOCKET sock;										// TCP 소켓
+	char recvBuf[65536];								// 받는 데이터를 저장할 버퍼
+	string ID;											// 유저 아이디
 }
 
 // 내부 로직 관련 네임스페이스
 namespace Logic
 {
+	static const char* QUIT = "quit";	// 종료 명령어
+	static const char* BOT = "bot";		// Bot 명령어
+
 	static const int MOVE_DIS = 3;		// 유저가 한 축당 이동할 수 있는 칸 수
 
-	// 서버로 데이터를 보낸다.
+	// 서버로 데이터를 보내는 함수
 	bool SendData(const string& text);
 
-	// 서버로부터 데이터를 받는다.
+	// 서버로부터 데이터를 받는 함수
 	bool ReceiveData();
 
 	// cin으로 입력받은 텍스트를 json 문자열로 변환해 반환하는 함수
 	// 성공, 실패 여부를 bool로 반환하고, 변환된 json 문자열은 파라미터 text에 저장된다.
 	bool GetInputTextJson(string& text);
 
-	// 로그인
+	// 로그인을 시도하는 함수
 	void Login();
 
-	// 프로그램 종료 준비
+	// 프로그램을 종료하는 함수
 	void ExitProgram();
 
+	// info 명령어를 서버로 보내는 함수
 	void Info();
 }
 
@@ -61,6 +64,7 @@ namespace Logic
 /// </summary>
 namespace Json
 {
+	// 메시지 타입을 나타내는 enum class
 	enum class M_Type
 	{
 		E_DIE,
@@ -68,7 +72,7 @@ namespace Json
 	};
 
 	typedef function<bool(string&, const string&)> Handler;
-	map<string, Handler> handlers;
+	map<string, Handler> handlers;								// json 문자열로 변환하는 함수 맵
 
 	// json key
 	static const char* TEXT = "text";
@@ -253,6 +257,11 @@ bool Logic::GetInputTextJson(string& text)
 	string input;
 	cin >> input;
 
+	if (input == QUIT)
+	{
+		ExitProgram();
+	}
+
 	// input 명령어가 존재하면
 	if (Json::handlers.find(input) != Json::handlers.end())
 	{
@@ -269,13 +278,27 @@ void Logic::Login()
 {
 	cout << "[시스템] 로그인이 필요합니다.\n[시스템] 아이디를 입력하세요.\n";
 
-	string ID;
-	cin >> ID;
+	while (true)
+	{
+		string ID;
+		cin >> ID;
 
-	// ID 저장
-	Client::ID = ID;
+		// ID가 명령어와 겹치지 않아야 사용가능
+		if (ID != Json::LOGIN && ID != Json::MOVE && ID != Json::ATTACK && ID != Json::MONSTERS && ID != Json::USERS && ID != Json::CHAT && ID != Json::USE_POTION && ID != Json::HP_POTION && ID != Json::STR_POTION && ID != Json::INFO && ID != Logic::QUIT && ID != Logic::BOT)
+		{
+			// ID 저장
+			Client::ID = ID;
 
-	string text = Json::GetJson(Json::LOGIN, ID);
+			break;
+		}
+		// ID가 명령어와 겹치면 오류
+		else
+		{
+			cout << "[오류] 사용 불가능한 아이디입니다.\n";
+		}
+	}
+
+	string text = Json::GetJson(Json::LOGIN, Client::ID);
 
 	SendData(text);
 }
