@@ -47,7 +47,8 @@ public:
 	string ID;									// 로그인된 유저의 ID
 
 	atomic<bool> doingProc;						// 현재 클라이언트가 처리 중인지를 나타내는 atomic 변수
-	char packet[65536];							// 최대 64KB 로 패킷 사이즈 고정
+	static const int PACKET_SIZE = 65536;		// packet 버퍼의 크기, 64KB
+	char packet[PACKET_SIZE];					// 최대 64KB 로 패킷 사이즈 고정
 	string sendPacket;							// 클라이언트로 보내질 데이터
 	bool sendTurn;								// 클라이언트로 보낼 차례인지 나타내는 상태변수
 	bool lenCompleted;							// 클라이언트가 보낼 데이터의 길이를 모두 받았는지 나타내는 상태변수
@@ -332,6 +333,23 @@ namespace Redis
 	static const char* STR = ":str";				// str의 redis 키
 	static const char* POTION_HP = ":potions:hp";	// hp 포션의 redis 키
 	static const char* POTION_STR = ":potions:str";	// str 포션의 redis 키
+
+	// flushall
+	void Flushall()
+	{
+		string cmd = "flushall";
+		redisReply* reply;
+		{
+			lock_guard<mutex> lg(redisMutex);
+
+			reply = (redisReply*)redisCommand(redis, cmd.c_str());
+		}
+
+		if (reply->type == REDIS_REPLY_ERROR)
+			cout << "Redis Command Error : " << cmd << '\n';
+
+		freeReplyObject(reply);
+	}
 
 	// get USER:ID
 	string GetUserConnection(const string& ID)

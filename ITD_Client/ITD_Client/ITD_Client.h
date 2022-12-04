@@ -26,7 +26,8 @@ namespace Client
 	static const char* SERVER_ADDRESS = "127.0.0.1";	// 연결할 서버 주소
 	static const unsigned short SERVER_PORT = 27015;	// 연결할 서버 포트번호
 	SOCKET sock;										// TCP 소켓
-	char recvBuf[65536];								// 받는 데이터를 저장할 버퍼
+	static const int PACKET_SIZE = 65536;				// packet 버퍼의 크기, 64KB
+	char packet[PACKET_SIZE];							// 최대 64KB 로 패킷 사이즈 고정
 	string ID;											// 유저 아이디
 }
 
@@ -198,7 +199,7 @@ bool Logic::ReceiveData()
 	//std::cout << "Received length info: " << dataLen << std::endl;
 
 	// 혹시 우리가 받을 데이터가 64KB보다 큰지 확인한다.
-	if (dataLen > sizeof(Client::recvBuf))
+	if (dataLen > sizeof(Client::packet))
 	{
 		cerr << "[오류] [" << Client::sock << "] Too big data: " << dataLen << endl;
 		return false;
@@ -209,7 +210,7 @@ bool Logic::ReceiveData()
 	//std::cout << "Receiving stream" << std::endl;
 	offset = 0;
 	while (offset < dataLen) {
-		r = recv(Client::sock, Client::recvBuf + offset, dataLen - offset, 0);
+		r = recv(Client::sock, Client::packet + offset, dataLen - offset, 0);
 		if (r == SOCKET_ERROR) {
 			std::cerr << "[오류] recv failed with error " << WSAGetLastError() << std::endl;
 			return false;
@@ -224,7 +225,7 @@ bool Logic::ReceiveData()
 	}
 
 	// 받은 json 메시지 처리
-	const string json = string(Client::recvBuf).substr(0, dataLen);
+	const string json = string(Client::packet).substr(0, dataLen);
 
 	Document document;
 	document.Parse(json);

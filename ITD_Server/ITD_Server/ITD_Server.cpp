@@ -327,6 +327,9 @@ int main()
         return 1;
     }
 
+    // 서버 구동 시 Redis 초기화
+    Redis::Flushall();
+
     // Handler Map 초기화
     Logic::InitHandlers();
 
