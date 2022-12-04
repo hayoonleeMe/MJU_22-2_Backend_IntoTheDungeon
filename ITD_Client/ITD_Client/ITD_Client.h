@@ -34,6 +34,8 @@ namespace Client
 // 내부 로직 관련 네임스페이스
 namespace Logic
 {
+	static const int MOVE_DIS = 3;		// 유저가 한 축당 이동할 수 있는 칸 수
+
 	// 서버로 데이터를 보낸다.
 	bool SendData(const string& text);
 
@@ -41,7 +43,8 @@ namespace Logic
 	bool ReceiveData();
 
 	// cin으로 입력받은 텍스트를 json 문자열로 변환해 반환하는 함수
-	string GetInputTextJson();
+	// 성공, 실패 여부를 bool로 반환하고, 변환된 json 문자열은 파라미터 text에 저장된다.
+	bool GetInputTextJson(string& text);
 
 	// 로그인
 	void Login();
@@ -64,7 +67,7 @@ namespace Json
 		E_DUP_CONNECTION,
 	};
 
-	typedef function<string(string)> Handler;
+	typedef function<bool(string&, const string&)> Handler;
 	map<string, Handler> handlers;
 
 	// json key
@@ -87,16 +90,38 @@ namespace Json
 	string GetJson(const string& input);
 
 	// key가 두개고 value가 input, param1인 json 문자열 반환하는 함수
-	string GetParamsJson(const string& input, const string& param1);
+	string GetJson(const string& input, const string& param1);
 
 	// key가 세개고 value가 input, param1, param2인 json 문자열 반환하는 함수
-	string GetParamsJson(const string& input, const string& param1, const string& param2);
+	string GetJson(const string& input, const string& param1, const string& param2);
 
-	// handlers에 저장되는, 문자열 하나를 입력받아 key가 2개인 json 문자열 반환하는 함수
-	string GetOneParamJson(const string& input);
+	// move 명령어에 대한 요청 메시지를 json 문자열로 변환하는 함수
+	// 성공, 실패 여부를 bool로 반환하고, 변환된 json 문자열은 파라미터 text에 저장된다.
+	bool GetMoveReqJson(string& text, const string& input);
 
-	// handlers에 저장되는, 문자열 두개를 입력받아 key가 3개인 json 문자열 반환하는 함수
-	string GetTwoParamsJson(const string& input);
+	// attack 명령어에 대한 요청 메시지를 json 문자열로 변환하는 함수
+	// 성공, 실패 여부를 bool로 반환하고, 변환된 json 문자열은 파라미터 text에 저장된다.
+	bool GetAttackReqJson(string& text, const string& input);
+
+	// monsters 명령어에 대한 요청 메시지를 json 문자열로 변환하는 함수
+	// 성공, 실패 여부를 bool로 반환하고, 변환된 json 문자열은 파라미터 text에 저장된다.
+	bool GetMonstersReqJson(string& text, const string& input);
+
+	// users 명령어에 대한 요청 메시지를 json 문자열로 변환하는 함수
+	// 성공, 실패 여부를 bool로 반환하고, 변환된 json 문자열은 파라미터 text에 저장된다.
+	bool GetUsersReqJson(string& text, const string& input);
+
+	// chat 명령어에 대한 요청 메시지를 json 문자열로 변환하는 함수
+	// 성공, 실패 여부를 bool로 반환하고, 변환된 json 문자열은 파라미터 text에 저장된다.
+	bool GetChatReqJson(string& text, const string& input);
+
+	// usepotion 명령어에 대한 요청 메시지를 json 문자열로 변환하는 함수
+	// 성공, 실패 여부를 bool로 반환하고, 변환된 json 문자열은 파라미터 text에 저장된다.
+	bool GetUsePotionReqJson(string& text, const string& input);
+
+	// info 명령어에 대한 요청 메시지를 json 문자열로 변환하는 함수
+	// 성공, 실패 여부를 bool로 반환하고, 변환된 json 문자열은 파라미터 text에 저장된다.
+	bool GetInfoReqJson(string& text, const string& input);
 
 	// handlers 초기화하는 함수
 	void InitHandlers();
@@ -223,7 +248,7 @@ bool Logic::ReceiveData()
 	return true;
 }
 
-string Logic::GetInputTextJson()
+bool Logic::GetInputTextJson(string& text)
 {
 	string input;
 	cin >> input;
@@ -231,11 +256,13 @@ string Logic::GetInputTextJson()
 	// input 명령어가 존재하면
 	if (Json::handlers.find(input) != Json::handlers.end())
 	{
-		return (Json::handlers[input])(input);
+		// 명령어 입력받은 결과를 반환
+		return (Json::handlers[input])(text, input);
 	}
 
-	// input이 명령어가 아니라면
-	return "";
+	// input이 명령어가 아니라면 오류
+	cout << "[오류] 존재하지 않는 명령어입니다.\n";
+	return false;
 }
 
 void Logic::Login()
@@ -248,7 +275,7 @@ void Logic::Login()
 	// ID 저장
 	Client::ID = ID;
 
-	string text = Json::GetParamsJson(Json::LOGIN, ID);
+	string text = Json::GetJson(Json::LOGIN, ID);
 
 	SendData(text);
 }
@@ -272,7 +299,10 @@ void Logic::ExitProgram()
 
 void Logic::Info()
 {
-	if (!SendData(Json::GetJson(Json::INFO)))
+	string text;
+	Json::handlers[Json::INFO](text, Json::INFO);
+
+	if (!SendData(text))
 		ExitProgram();
 }
 
@@ -280,42 +310,99 @@ void Logic::Info()
 // namespace Json definition
 string Json::GetJson(const string& input)
 {
-	return "{\"" + string(TEXT) + "\":         \"" + input + "\"}";
+	return "{\"" + string(TEXT) + "\":\"" + input + "\"}";
 }
 
-string Json::GetParamsJson(const string& input, const string& param1)
+string Json::GetJson(const string& input, const string& param1)
 {
 	return "{\"" + string(TEXT) + "\":\"" + input + "\",\"" + string(PARAM1) + "\":\"" + param1 + "\"}";
 }
 
-string Json::GetParamsJson(const string& input, const string& param1, const string& param2)
+string Json::GetJson(const string& input, const string& param1, const string& param2)
 {
 	return "{\"" + string(TEXT) + "\":\"" + input + "\",\"" + string(PARAM1) + "\":\"" + param1 + "\",\"" + string(PARAM2) + "\":\"" + param2 + "\"}";
 }
 
-string Json::GetOneParamJson(const string& input)
+bool Json::GetMoveReqJson(string& text, const string& input)
 {
-	string param1;
-	cin >> param1;
-
-	return GetParamsJson(input, param1);
-}
-
-string Json::GetTwoParamsJson(const string& input)
-{
-	string param1, param2;
+	int param1, param2;
 	cin >> param1 >> param2;
 
-	return GetParamsJson(input, param1, param2);
+	// 한 축당 3칸 초과 이동이면 오류
+	if (param1 > Logic::MOVE_DIS || param1 < -1 * Logic::MOVE_DIS || param2 > Logic::MOVE_DIS || param2 < -1 * Logic::MOVE_DIS)
+	{
+		cout << "[오류] 유저는 한 방향으로 3칸씩 이동할 수 있습니다.\n";
+		return false;
+	}
+
+	text = GetJson(input, to_string(param1), to_string(param2));
+	return true;
+}
+
+bool Json::GetAttackReqJson(string& text, const string& input)
+{
+	text = GetJson(input);
+	return true;
+}
+
+bool Json::GetMonstersReqJson(string& text, const string& input)
+{
+	text = GetJson(input);
+	return true;
+}
+
+bool Json::GetUsersReqJson(string& text, const string& input)
+{
+	text = GetJson(input);
+	return true;
+}
+
+bool Json::GetChatReqJson(string& text, const string& input)
+{
+	string toUserID, message;
+	cin >> toUserID;
+	getline(cin, message);
+
+	// userID가 유저 자신이면 오류
+	if (toUserID == Client::ID)
+	{
+		cout << "[오류] 자신에게는 귓속말을 보낼 수 없습니다.\n";
+		return false;
+	}
+
+	text = GetJson(input, toUserID, message);
+	return true;
+}
+
+bool Json::GetUsePotionReqJson(string& text, const string& input)
+{
+	string potionType;
+	cin >> potionType;
+
+	// 일치하는 포션이 없으면 오류
+	if (potionType != Json::HP_POTION && potionType != Json::STR_POTION)
+	{
+		cout << "[오류] 존재하지 않는 포션 종류입니다.\n";
+		return false;
+	}
+
+	text = GetJson(input, potionType);
+	return true;
+}
+
+bool Json::GetInfoReqJson(string& text, const string& input)
+{
+	text = GetJson(input);
+	return true;
 }
 
 void Json::InitHandlers()
 {
-	handlers[MOVE] = GetTwoParamsJson;
-	handlers[ATTACK] = GetJson;
-	handlers[MONSTERS] = GetJson;
-	handlers[USERS] = GetJson;
-	handlers[CHAT] = GetTwoParamsJson;
-	handlers[USE_POTION] = GetOneParamJson;
-	handlers[INFO] = GetJson;
+	handlers[MOVE] = GetMoveReqJson;
+	handlers[ATTACK] = GetAttackReqJson;
+	handlers[MONSTERS] = GetMonstersReqJson;
+	handlers[USERS] = GetUsersReqJson;
+	handlers[CHAT] = GetChatReqJson;
+	handlers[USE_POTION] = GetUsePotionReqJson;
+	handlers[INFO] = GetInfoReqJson;
 }

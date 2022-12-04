@@ -59,10 +59,11 @@ int main()
 
     // cin으로 입력받은 텍스트를 JSON으로 변경해 서버로 전송한다.
     while (true) {
-        string text = Logic::GetInputTextJson();
-        if (text == "")
+        string text;
+
+        // 변환이 실패하면 다시 입력받는다.
+        if (!Logic::GetInputTextJson(text))
         {
-            cout << "Wrong Text, Try Again\n";
             continue;
         }
 

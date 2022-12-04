@@ -1006,13 +1006,13 @@ string Logic::ProcessUsePotion(const shared_ptr<Client>& client, const ParamsFor
 			// hp 포션 개수 차감
 			Redis::SetHpPotion(client->ID, -1, Redis::F_Type::E_RELATIVE);
 
-			string raw = "Hp 포션을 1개 사용해 체력이 " + to_string(Logic::HP_POTION_HEAL) + "증가했습니다.";
+			string raw = "HP 포션을 1개 사용해 체력이 " + to_string(Logic::HP_POTION_HEAL) + "만큼 증가했습니다.";
 			ret = Json::GetTextOnlyJson(raw);
 		}
 		// hp potion이 존재하지 않을 때
 		else
 		{
-			ret = Json::GetTextOnlyJson("Hp 포션이 존재하지 않습니다.");
+			ret = Json::GetTextOnlyJson("HP 포션이 존재하지 않습니다.");
 		}
 	}
 	// str potion 사용
@@ -1030,13 +1030,13 @@ string Logic::ProcessUsePotion(const shared_ptr<Client>& client, const ParamsFor
 			// str 포션 개수 차감
 			Redis::SetStrPotion(client->ID, -1, Redis::F_Type::E_RELATIVE);
 
-			string raw = "Str 포션 1개를 사용해 " + to_string(Logic::STR_POTION_DURATION) + "초 간 공격력이 " + to_string(Logic::STR_POTION_DAMAGE) + "만큼 증가합니다.";
+			string raw = "STR 포션 1개를 사용해 " + to_string(Logic::STR_POTION_DURATION) + "초 간 공격력이 " + to_string(Logic::STR_POTION_DAMAGE) + "만큼 증가합니다.";
 			ret = Json::GetTextOnlyJson(raw);
 		}
 		// str potion이 존재하지 않을 때
 		else
 		{
-			ret = Json::GetTextOnlyJson("Str 포션이 존재하지 않습니다.");
+			ret = Json::GetTextOnlyJson("STR 포션이 존재하지 않습니다.");
 		}
 	}
 
@@ -1203,7 +1203,7 @@ string Json::GetMonstersRespJson()
 
 string Json::GetChatRespJson(const string& userID, const string& text)
 {
-	return "{\"" + string(TEXT) + "\":\"[귓속말] " + userID + "(으)로 부터 온 메시지 : " + text + "\"}";
+	return "{\"" + string(TEXT) + "\":\"[귓속말] " + userID + " (으)로 부터 온 메시지 : " + text + "\"}";
 }
 
 string Json::GetInfoRespJson(const string& userID)
