@@ -10,6 +10,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <random>
 #include <thread>
 #include <WinSock2.h>
 #include <WS2tcpip.h>
@@ -137,6 +138,67 @@ namespace Json
 	void InitHandlers();
 }
 
+// Bot 모드 관련 네임스페이스
+namespace Bot
+{
+	bool isBotMode = false;												// 봇모드가 활성화 됐는지를 나타내는 상태변수
+
+	static const int CMD_PERIOD = 1;									// 명령어를 고르는 시간 (초)
+	static const int CMD_NUM = 5;										// 랜덤으로 선택할 명령어 종류의 수
+	static const char* CMD_BOT[] =										// 랜덤으로 선택할 명령어 종류
+	{
+		Json::MOVE, Json::ATTACK, Json::MONSTERS, Json::USERS, Json::CHAT
+	};
+	static const char* CHAT_MSG = "Bot 모드에서 보내는 메시지입니다.";		// chat 명령어로 보낼 메시지
+
+	typedef function<string(string)> BotHandler;
+	map<string, BotHandler> botHandlers;								// json 문자열로 변환하는 봇모드 함수 맵
+
+	// move 명령어에 대한 요청 메시지를 json 문자열로 변환하는 함수
+	string GetMoveReqJson(const string& input);
+
+	// attack 명령어에 대한 요청 메시지를 json 문자열로 변환하는 함수
+	string GetAttackReqJson(const string& input);
+
+	// monsters 명령어에 대한 요청 메시지를 json 문자열로 변환하는 함수
+	string GetMonstersReqJson(const string& input);
+
+	// users 명령어에 대한 요청 메시지를 json 문자열로 변환하는 함수
+	string GetUsersReqJson(const string& input);
+
+	// chat 명령어에 대한 요청 메시지를 json 문자열로 변환하는 함수
+	string GetChatReqJson(const string& input);
+
+	// botHandlers 초기화하는 함수
+	void InitBotHandlers();
+}
+
+// 난수 관련 네임스페이스
+namespace Rand
+{
+	// random 변수들
+	random_device rd;
+	mt19937 gen(rd());
+
+	// Bot 모드에서 선택할 명령어들 종류 내의 정수
+	uniform_int_distribution<int> cmdDis(0, Bot::CMD_NUM - 1);
+
+	// 유저 이동 거리 범위 내의 정수 (-3 ~ 3)
+	uniform_int_distribution<int> moveDis(-1 * Logic::MOVE_DIS, Logic::MOVE_DIS);
+
+	// 명령어 랜덤 종류 반환
+	int GetRandomCmd()
+	{
+		return cmdDis(gen);
+	}
+
+	// 랜덤 이동 거리 반환
+	int GetRandomMoveDis()
+	{
+		return moveDis(gen);
+	}
+
+}
 
 // namespace Logic definition
 bool Logic::SendData(const string& text)
@@ -278,6 +340,12 @@ bool Logic::GetInputTextJson(string& text)
 	else if (input == HELP)
 	{
 		Help();
+		return false;
+	}
+	else if (input == BOT)
+	{
+		// 봇모드를 활성화한다.
+		Bot::isBotMode = true;
 		return false;
 	}
 
@@ -464,4 +532,45 @@ void Json::InitHandlers()
 	handlers[CHAT] = GetChatReqJson;
 	handlers[USE_POTION] = GetUsePotionReqJson;
 	handlers[INFO] = GetInfoReqJson;
+}
+
+
+// namespace Bot definition
+string Bot::GetMoveReqJson(const string& input)
+{
+	int x = Rand::GetRandomMoveDis();
+	int y = Rand::GetRandomMoveDis();
+
+	return Json::GetJson(input, to_string(x), to_string(y));
+}
+
+string Bot::GetAttackReqJson(const string& input)
+{
+	return Json::GetJson(input);
+}
+
+string Bot::GetMonstersReqJson(const string& input)
+{
+	return Json::GetJson(input);
+}
+
+string Bot::GetUsersReqJson(const string& input)
+{
+	return Json::GetJson(input);
+}
+
+string Bot::GetChatReqJson(const string& input)
+{
+	string toUserID = "hayoon";
+
+	return Json::GetJson(input, toUserID, CHAT_MSG);
+}
+
+void Bot::InitBotHandlers()
+{
+	botHandlers[Json::MOVE] = GetMoveReqJson;
+	botHandlers[Json::ATTACK] = GetAttackReqJson;
+	botHandlers[Json::MONSTERS] = GetMonstersReqJson;
+	botHandlers[Json::USERS] = GetUsersReqJson;
+	botHandlers[Json::CHAT] = GetChatReqJson;
 }

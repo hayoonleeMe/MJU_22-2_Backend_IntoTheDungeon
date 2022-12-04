@@ -107,6 +107,7 @@ namespace Logic
 	static const int NUM_POTION_TYPE = 2;			// 포션 타입 수
 	static const int HP_POTION_HEAL = 10;			// hp 포션 체력 증가량
 	static const int STR_POTION_DAMAGE = 3;			// str 포션 공격력 증가량
+	// TODO : str 포션 지속시간 변경 필요 -> 60(1분)
 	static const int STR_POTION_DURATION = 20;		// str 포션 지속시간 (초)
 
 	// 포션 타입을 나타내는 enum class
@@ -184,7 +185,7 @@ public:
 	int str;									// str, 3~5 사이 랜덤
 	Logic::PotionType potionType;				// 지니고 있는 포션의 타입
 
-	static int slimeIndex;						// 생성될 때마다 1씩 증가하는 static 인덱스
+	static int slimeIndex;						// 생성될 때마다 1씩 증가하는 static 인덱스 변수
 	static const int MAX_X_ATTACK_RANGE = 1;	// x축 최대 공격범위
 	static const int MIN_X_ATTACK_RANGE = -1;	// x축 최소 공격범위
 	static const int MAX_Y_ATTACK_RANGE = 1;	// y축 최대 공격범위
@@ -204,12 +205,16 @@ namespace Rand
 	// random 변수들
 	random_device rd;
 	mt19937 gen(rd());
+
 	// 던전 범위 내의 정수
 	uniform_int_distribution<int> locDis(0, Logic::NUM_DUNGEON_X - 1);
+
 	// 슬라임 hp 범위 내의 정수
 	uniform_int_distribution<int> slimeHpDis(Slime::RAND_MIN_HP, Slime::RAND_MAX_HP);
+
 	// 슬라임 str 범위 내의 정수
 	uniform_int_distribution<int> slimeStrDis(Slime::RAND_MIN_STR, Slime::RAND_MAX_STR);
+
 	// 포션 타입 범위 내의 정수
 	uniform_int_distribution<int> potionTypeDis(0, Logic::NUM_POTION_TYPE - 1);
 
@@ -299,7 +304,7 @@ namespace Json
 	string GetUsersRespJson(const string& userID);
 
 	// Chat response
-	string GetChatRespJson(const string& userID, const string& text);
+	string GetChatRespJson(const string& fromUserID, const string& text);
 
 	// Info response
 	string GetInfoRespJson(const string& userID);
@@ -322,8 +327,8 @@ namespace Redis
 	// ID가 존재할 때의 반환값
 	static const int EXIST_ID = 1;
 
-	// TODO : 키 만료 시간 수정 필요
-	static const char* EXPIRE_TIME = "30";			// 키 만료 시간
+	// TODO : 키 만료 시간 수정 필요 -> 300(5분)
+	static const char* EXPIRE_TIME = "30";			// 키 만료 시간 (초)
 	static const char* LOGINED = "1";				// USER:ID의 이미 로그인 중일 때의 value 값
 	static const char* EXPIRED = "0";				// USER:ID의 Expire 됐을 때의 value 값
 
@@ -1005,7 +1010,7 @@ string Logic::ProcessChat(const shared_ptr<Client>& client, const ParamsForProc&
 	{
 		lock_guard<mutex> lg(shouldSendPacketsMutex);
 
-		shouldSendPackets[toSock].push_back(Json::GetChatRespJson(params.param1, params.param2));
+		shouldSendPackets[toSock].push_back(Json::GetChatRespJson(client->ID, params.param2));
 	}
 
 	string raw = params.param1 + " 에게 귓속말을 전송했습니다.";
@@ -1240,9 +1245,9 @@ string Json::GetMonstersRespJson()
 	return msg;
 }
 
-string Json::GetChatRespJson(const string& userID, const string& text)
+string Json::GetChatRespJson(const string& fromUserID, const string& text)
 {
-	return "{\"" + string(TEXT) + "\":\"[귓속말] " + userID + " (으)로 부터 온 메시지 : " + text + "\"}";
+	return "{\"" + string(TEXT) + "\":\"[귓속말] " + fromUserID + " (으)로 부터 온 메시지 : " + text + "\"}";
 }
 
 string Json::GetInfoRespJson(const string& userID)

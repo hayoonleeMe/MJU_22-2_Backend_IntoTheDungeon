@@ -63,6 +63,10 @@ int main()
 
     // cin으로 입력받은 텍스트를 JSON으로 변경해 서버로 전송한다.
     while (true) {
+        // bot 명령어를 입력받아 bot 모드가 활성화되면 반복문을 빠져나간다.
+        if (Bot::isBotMode)
+            break;
+
         string text;
 
         // 변환이 실패하면 다시 입력받는다.
@@ -73,6 +77,28 @@ int main()
 
         if (!Logic::SendData(text))
             Logic::ExitProgram();
+    }
+
+    // bot 명령어를 통해 bot 모드가 활성화되면
+    if (Bot::isBotMode)
+    {
+        Bot::InitBotHandlers();
+
+        // 봇 모드의 로직을 수행한다.
+        while (true)
+        {
+            // 랜덤한 명령어를 선택한다.
+            string text = Bot::CMD_BOT[Rand::GetRandomCmd()];
+
+            // 명령어 별로 json 문자열로 변환하여 보낸다.
+            string msg = Bot::botHandlers[text](text);
+
+            if (!Logic::SendData(msg))
+                Logic::ExitProgram();
+
+            // CMD_PERIOD 초 마다 명령어를 실행한다.
+            this_thread::sleep_for(chrono::seconds(Bot::CMD_PERIOD));
+        }
     }
 
     // recvThread를 join한다.
