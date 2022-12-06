@@ -563,6 +563,13 @@ string Bot::GetChatReqJson(const string& input)
 {
 	string toUserID = "hayoon";
 
+	// userID가 유저 자신이면 오류
+	if (toUserID == Client::ID)
+	{
+		cout << "[오류] 자신에게는 귓속말을 보낼 수 없습니다.\n";
+		return "";
+	}
+
 	return Json::GetJson(input, toUserID, CHAT_MSG);
 }
 

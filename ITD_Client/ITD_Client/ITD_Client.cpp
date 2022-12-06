@@ -93,6 +93,9 @@ int main()
             // 명령어 별로 json 문자열로 변환하여 보낸다.
             string msg = Bot::botHandlers[text](text);
 
+            if (msg == "")
+                continue;
+
             if (!Logic::SendData(msg))
                 Logic::ExitProgram();
 
