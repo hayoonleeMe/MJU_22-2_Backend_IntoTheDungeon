@@ -63,6 +63,8 @@ int main()
 
     // cin으로 입력받은 텍스트를 JSON으로 변경해 서버로 전송한다.
     while (true) {
+        this_thread::sleep_for(chrono::seconds(1));
+
         // bot 명령어를 입력받아 bot 모드가 활성화되면 반복문을 빠져나간다.
         if (Bot::isBotMode)
             break;

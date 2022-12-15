@@ -77,6 +77,7 @@ namespace Json
 		E_DIE,
 		E_DUP_CONNECTION,
 		E_LOGIN_SUCCESS,
+		E_CHAT,
 	};
 
 	typedef function<bool(string&, const string&)> Handler;
@@ -247,13 +248,13 @@ bool Logic::ReceiveData()
 	while (offset < 4) {
 		r = recv(Client::sock, ((char*)&dataLenNetByteOrder) + offset, 4 - offset, 0);
 		if (r == SOCKET_ERROR) {
-			std::cerr << "[오류] recv failed with error " << WSAGetLastError() << std::endl;
+			cerr << "[오류] recv failed with error " << WSAGetLastError() << endl;
 			return false;
 		}
 		else if (r == 0) {
 			// 메뉴얼을 보면 recv() 는 소켓이 닫힌 경우 0 을 반환함을 알 수 있다.
 			// 따라서 r == 0 인 경우도 loop 을 탈출하게 해야된다.
-			std::cerr << "[오류] socket closed while reading length" << std::endl;
+			cerr << "[오류] socket closed while reading length" << endl;
 			return false;
 		}
 		offset += r;
@@ -275,7 +276,7 @@ bool Logic::ReceiveData()
 	while (offset < dataLen) {
 		r = recv(Client::sock, Client::packet + offset, dataLen - offset, 0);
 		if (r == SOCKET_ERROR) {
-			std::cerr << "[오류] recv failed with error " << WSAGetLastError() << std::endl;
+			cerr << "[오류] recv failed with error " << WSAGetLastError() << endl;
 			return false;
 		}
 		else if (r == 0) {
@@ -289,11 +290,12 @@ bool Logic::ReceiveData()
 
 	// 받은 json 메시지 처리
 	const string json = string(Client::packet).substr(0, dataLen);
+	memset(Client::packet, 0, Client::PACKET_SIZE);
 
 	Document document;
 	document.Parse(json);
 
-	// 잘못된 메시지가 올 때 처리
+	// Parsing 할 수 없는 잘못된 메시지가 올 때 처리
 	// 프로그램을 종료시키지 않을 것이므로 true 반환
 	if (!document.IsObject())
 	{
@@ -303,7 +305,23 @@ bool Logic::ReceiveData()
 
 	//cout << "Received json : " << json << '\n';
 	//cout << "Received text : " << document["text"].GetString() << '\n';
-	cout << document[Json::TEXT].GetString() << '\n';
+
+	// 받은 메시지를 출력한다.
+	if (document.HasMember(Json::PARAM1))
+	{
+		if (Json::M_Type(stoi(document[Json::PARAM1].GetString())) == Json::M_Type::E_CHAT)
+		{
+			cout << "[귓속말] " << document[Json::TEXT].GetString() << '\n';
+		}
+		else
+		{
+			cout << "[시스템] " << document[Json::TEXT].GetString() << '\n';
+		}
+	}
+	else
+	{
+		cout << "[시스템] " << document[Json::TEXT].GetString() << '\n';
+	}
 
 	// 받은 메세지가 메시지 타입이 존재하면
 	if (document.HasMember(Json::PARAM1))

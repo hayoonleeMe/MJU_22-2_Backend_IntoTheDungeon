@@ -256,6 +256,7 @@ namespace Json
 		E_DIE,
 		E_DUP_CONNECTION,
 		E_LOGIN_SUCCESS,
+		E_CHAT,
 	};
 
 	// json key
@@ -754,7 +755,7 @@ namespace Redis
 	}
 
 	// 유저를 redis에 등록한다.
-	string RegisterUser(const string& ID)
+	string RegisterUser(const string& ID, const SOCKET& sock)
 	{
 		// 반환할 문자열
 		string ret;
@@ -797,7 +798,7 @@ namespace Redis
 			// USER:ID가 존재하지 않을 때
 			else
 			{
-				cout << "[시스템] New User : " << ID << '\n';
+				cout << "[시스템] [" << sock << "] New User : " << ID << '\n';
 				string raw = "로그인에 성공했습니다.\\r\\n" + ID + " 님이 접속했습니다.";
 				ret = Json::GetLoginSuccessJson(raw);
 
@@ -864,7 +865,9 @@ void Server::TerminateRemainUser(const string& ID)
 
 // class Client Definition
 Client::Client(SOCKET sock) : sock(sock), sendTurn(false), doingProc(false), lenCompleted(false), packetLen(0), offset(0), ID(""), sendPacket(""), shouldTerminate(false)
-{}
+{
+	memset(packet, 0, Client::PACKET_SIZE);
+}
 
 Client::~Client()
 {
@@ -1179,43 +1182,43 @@ string Json::GetLoginSuccessJson(const string& text)
 
 string Json::GetSlimeAttackUserJson(int slimeIndex, const string& userID, int slimeStr)
 {
-	return "{\"" + string(TEXT) + "\":\"[시스템] 슬라임" + to_string(slimeIndex) + " 이/가 " + userID + " 을/를 공격해서 데미지 " + to_string(slimeStr) + " 을/를 가했습니다.\"}";
+	return "{\"" + string(TEXT) + "\":\"슬라임" + to_string(slimeIndex) + " 이/가 " + userID + " 을/를 공격해서 데미지 " + to_string(slimeStr) + " 을/를 가했습니다.\"}";
 }
 
 string Json::GetUserAttackSlimeJson(const string& userID, int slimeIndex, int userStr)
 {
-	return "{\"" + string(TEXT) + "\":\"[시스템] " + userID + " 이/가 슬라임" + to_string(slimeIndex) + " 을/를 공격해서 데미지 " + to_string(userStr) + " 을/를 가했습니다.\"}";
+	return "{\"" + string(TEXT) + "\":\"" + userID + " 이/가 슬라임" + to_string(slimeIndex) + " 을/를 공격해서 데미지 " + to_string(userStr) + " 을/를 가했습니다.\"}";
 }
 
 string Json::GetSlimeDieJson(int slimeIndex, const string& userID)
 {
-	return "{\"" + string(TEXT) + "\":\"[시스템] 슬라임" + to_string(slimeIndex) + " 이/가 " + userID + " 에 의해 죽었습니다.\"}";
+	return "{\"" + string(TEXT) + "\":\"슬라임" + to_string(slimeIndex) + " 이/가 " + userID + " 에 의해 죽었습니다.\"}";
 }
 
 string Json::GetUserDieJson(const string& userID, int slimeIndex)
 {
-	return "{\"" + string(TEXT) + "\":\"[시스템] " + userID + " 이/가 슬라임" + to_string(slimeIndex) + " 에 의해 죽었습니다.\",\"" + string(PARAM1) + "\":\"" + to_string(int(M_Type::E_DIE)) + "\",\"" + string(PARAM2) + "\":\"" + userID + "\"}";
+	return "{\"" + string(TEXT) + "\":\"" + userID + " 이/가 슬라임" + to_string(slimeIndex) + " 에 의해 죽었습니다.\",\"" + string(PARAM1) + "\":\"" + to_string(int(M_Type::E_DIE)) + "\",\"" + string(PARAM2) + "\":\"" + userID + "\"}";
 }
 
 string Json::GetMoveRespJson(const string& userID)
 {
-	return "{\"" + string(TEXT) + "\":\"[시스템] (" + Redis::GetLocationX(userID) + ", " + Redis::GetLocationY(userID) + ")로 이동했습니다.\"}";
+	return "{\"" + string(TEXT) + "\":\"(" + Redis::GetLocationX(userID) + ", " + Redis::GetLocationY(userID) + ")로 이동했습니다.\"}";
 }
 
 string Json::GetTextOnlyJson(const string& text)
 {
-	return "{\"" + string(TEXT) + "\":\"[시스템] " + text + "\"}";
+	return "{\"" + string(TEXT) + "\":\"" + text + "\"}";
 }
 
 string Json::GetDupConnectionJson()
 {
-	return "{\"" + string(TEXT) + "\":\"[시스템] 다른 클라이언트에서 동일한 아이디로 로그인했습니다.\",\"" + string(PARAM1) + "\":\"" + to_string(int(M_Type::E_DUP_CONNECTION)) + "\"}";
+	return "{\"" + string(TEXT) + "\":\"다른 클라이언트에서 동일한 아이디로 로그인했습니다.\",\"" + string(PARAM1) + "\":\"" + to_string(int(M_Type::E_DUP_CONNECTION)) + "\"}";
 }
 
 string Json::GetUsersRespJson(const string& userID)
 {
 	// 해당 명령 보낸 클라이언트 우선 출력
-	string msg = "{\"" + string(TEXT) + "\":\"[시스템] 유저 위치정보\\r\\n" + userID + " : (" + Redis::GetLocationX(userID) + ", " + Redis::GetLocationY(userID) + ")";
+	string msg = "{\"" + string(TEXT) + "\":\"유저 위치정보\\r\\n" + userID + " : (" + Redis::GetLocationX(userID) + ", " + Redis::GetLocationY(userID) + ")";
 
 	// 다른 클라이언트들의 위치
 	for (auto& entry : Server::activeClients)
@@ -1234,7 +1237,7 @@ string Json::GetUsersRespJson(const string& userID)
 
 string Json::GetMonstersRespJson()
 {
-	string msg = "{\"" + string(TEXT) + "\":\"[시스템] 슬라임 위치정보";
+	string msg = "{\"" + string(TEXT) + "\":\"슬라임 위치정보";
 
 	for (list<shared_ptr<Slime>>::iterator it = Logic::slimes.begin(); it != Logic::slimes.end(); ++it)
 	//for (auto& slime : Logic::slimes)
@@ -1248,12 +1251,12 @@ string Json::GetMonstersRespJson()
 
 string Json::GetChatRespJson(const string& fromUserID, const string& text)
 {
-	return "{\"" + string(TEXT) + "\":\"[귓속말] " + fromUserID + " (으)로 부터 온 메시지 : " + text + "\"}";
+	return "{\"" + string(TEXT) + "\":\"" + fromUserID + " (으)로 부터 온 메시지 : " + text + "\",\"" + string(PARAM1) + "\":\"" + to_string(int(M_Type::E_CHAT)) + "\"}";
 }
 
 string Json::GetInfoRespJson(const string& userID)
 {
-	string ret = "{\"" + string(TEXT) + "\":\"[시스템] 유저 정보\\r\\n유저 ID : " + userID + "\\r\\n유저 좌표 : (" + Redis::GetLocationX(userID) + ", " + Redis::GetLocationY(userID) + ")\\r\\n유저 HP : " + Redis::GetHp(userID) + "\\r\\n유저 STR : " + Redis::GetStr(userID) + "\\r\\n유저 HP 포션 개수 : " + Redis::GetHpPotion(userID) + "\\r\\n유저 STR 포션 개수 : " + Redis::GetStrPotion(userID) + "\"}";
+	string ret = "{\"" + string(TEXT) + "\":\"유저 정보\\r\\n유저 ID : " + userID + "\\r\\n유저 좌표 : (" + Redis::GetLocationX(userID) + ", " + Redis::GetLocationY(userID) + ")\\r\\n유저 HP : " + Redis::GetHp(userID) + "\\r\\n유저 STR : " + Redis::GetStr(userID) + "\\r\\n유저 HP 포션 개수 : " + Redis::GetHpPotion(userID) + "\\r\\n유저 STR 포션 개수 : " + Redis::GetStrPotion(userID) + "\"}";
 
 	return ret;
 }

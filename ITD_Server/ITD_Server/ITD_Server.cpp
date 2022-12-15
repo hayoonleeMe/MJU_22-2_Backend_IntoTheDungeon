@@ -44,13 +44,13 @@ bool processClient(shared_ptr<Client> client)
             int r = recv(activeSock, (char*)&(client->packetLen) + client->offset, 4 - client->offset, 0);
             if (r == SOCKET_ERROR) 
             {
-                cerr << "[오류] recv failed with error " << WSAGetLastError() << endl;
+                cerr << "[오류] [" << activeSock << "] recv failed with error " << WSAGetLastError() << endl;
                 return false;
             }
             else if (r == 0) 
             {
                 // 메뉴얼을 보면 recv() 는 소켓이 닫힌 경우 0 을 반환함을 알 수 있다.
-                cerr << "[오류] Socket closed: " << activeSock << endl;
+                cerr << "[오류] [" << activeSock << "] Socket closed" << endl;
                 return false;
             }
             client->offset += r;
@@ -63,7 +63,7 @@ bool processClient(shared_ptr<Client> client)
 
             // host byte order 로 변경한다.
             int dataLen = ntohl(client->packetLen);
-            cout << "[" << activeSock << "] Received length info: " << dataLen << endl;
+            //cout << "[" << activeSock << "] Received length info: " << dataLen << endl;
             client->packetLen = dataLen;
 
             // 혹시 우리가 받을 데이터가 64KB보다 큰지 확인한다.
@@ -87,19 +87,20 @@ bool processClient(shared_ptr<Client> client)
         int r = recv(activeSock, client->packet + client->offset, client->packetLen - client->offset, 0);
         if (r == SOCKET_ERROR) 
         {
-            cerr << "[오류] recv failed with error " << WSAGetLastError() << endl;
+            cerr << "[오류] [" << activeSock << "] recv failed with error " << WSAGetLastError() << endl;
             return false;
         }
         else if (r == 0) 
         {
             // 메뉴얼을 보면 recv() 는 소켓이 닫힌 경우 0 을 반환함을 알 수 있다.
+            cerr << "[오류] [" << activeSock << "] recv failed with error " << WSAGetLastError() << endl;
             return false;
         }
         client->offset += r;
 
         if (client->offset == client->packetLen) 
         {
-            cout << "[" << activeSock << "] Received " << client->packetLen << " bytes" << endl;
+            //cout << "[" << activeSock << "] Received " << client->packetLen << " bytes" << endl;
 
             // 클라이언트로부터 받은 명령어에 따라 로직 수행
             const string json = string(client->packet).substr(0, client->packetLen);
@@ -113,7 +114,7 @@ bool processClient(shared_ptr<Client> client)
             // 클라이언트의 로그인 시도
             if (strcmp(text.GetString(), Json::LOGIN) == 0)
             {
-                client->sendPacket = Redis::RegisterUser(string(document[Json::PARAM1].GetString()));
+                client->sendPacket = Redis::RegisterUser(string(document[Json::PARAM1].GetString()), client->sock);
 
                 if (client->ID == "")
                     client->ID = string(document[Json::PARAM1].GetString());
@@ -143,6 +144,7 @@ bool processClient(shared_ptr<Client> client)
                 client->sendTurn = false;
 
             // 다음 패킷을 위해 패킷 관련 정보를 초기화한다.
+            memset(client->packet, 0, Client::PACKET_SIZE);
             client->lenCompleted = false;
             client->offset = 0;
             if (client->sendTurn)
@@ -157,7 +159,7 @@ bool processClient(shared_ptr<Client> client)
     // 받은 패킷에 대한 응답을 보낸다.
     if (client->sendTurn)
     {   
-        cout << "[" << activeSock << "] Send Start to " << client->ID << ", send msg : " << client->sendPacket << '\n';
+        //cout << "[" << activeSock << "] Send Start to " << client->ID << ", send msg : " << client->sendPacket << '\n';
 
         // 데이터 길이를 보낸다.
         if (client->lenCompleted == false) 
@@ -165,7 +167,7 @@ bool processClient(shared_ptr<Client> client)
             int r = send(activeSock, (char*)&(client->packetLen) + client->offset, 4 - client->offset, 0);
             if (r == SOCKET_ERROR) 
             {
-                cerr << "[오류] send failed with error " << WSAGetLastError() << endl;
+                cerr << "[오류] [" << activeSock << "] send failed with error " << WSAGetLastError() << endl;
                 return false;
             }
             client->offset += r;
@@ -192,7 +194,7 @@ bool processClient(shared_ptr<Client> client)
         int r = send(activeSock, client->sendPacket.c_str() + client->offset, client->packetLen - client->offset, 0);
         if (r == SOCKET_ERROR) 
         {
-            cerr << "[오류] send failed with error " << WSAGetLastError() << endl;
+            cerr << "[오류] [" << activeSock << "] send failed with error " << WSAGetLastError() << endl;
             return false;
         }
         client->offset += r;
@@ -200,7 +202,7 @@ bool processClient(shared_ptr<Client> client)
         // 데이터를 모두 보냈다면
         if (client->offset == client->packetLen) 
         {
-            cout << "[" << activeSock << "] Sent " << client->packetLen << " bytes" << endl;
+            //cout << "[" << activeSock << "] Sent " << client->packetLen << " bytes" << endl;
 
             // 다음 패킷을 위해 패킷 관련 정보를 초기화한다.
             client->sendTurn = false;
@@ -236,13 +238,28 @@ void workerThreadProc()
             bool successful = processClient(client);
             if (successful == false) 
             {
-                closesocket(activeSock);
+                // 기존 접속에서 예정되어 있던 보내야하는 메시지들을 모두 없앤다.
+                {
+                    lock_guard<mutex> lg(Logic::shouldSendPacketsMutex);
+
+                    Logic::shouldSendPackets[activeSock].clear();
+                }
+
+                // 해당 클라이언트의 모든 키를 expire한다.
                 Redis::ExpireUser(client->ID);
 
+                // 해당 클라이언트를 지운다.
                 {
                     lock_guard<mutex> lg(Server::activeClientsMutex);
 
                     Server::activeClients.erase(activeSock);
+                }
+
+                // 소켓을 닫는다.
+                if (activeSock != INVALID_SOCKET)
+                {
+                    cout << "[processClient is false] socket closed : " << activeSock << '\n';
+                    closesocket(activeSock);
                 }
             }
             else 
@@ -356,7 +373,7 @@ int main()
     }
     // 슬라임 생성 및 공격 작업을 처리하는 쓰레드를 추가한다.
     threads.push_back(shared_ptr<thread>(new thread(SlimeGenerateThread)));
-    threads.push_back(shared_ptr<thread>(new thread(SlimeAttackCheckThread)));
+    //threads.push_back(shared_ptr<thread>(new thread(SlimeAttackCheckThread)));
 
     while (true) 
     {
@@ -473,23 +490,38 @@ int main()
         {
             lock_guard<mutex> lg(Server::activeClientsMutex);
 
-            for (auto& entry : Server::activeClients)
+            for (auto it = Server::activeClients.begin(); it != Server::activeClients.end();)
+            //for (auto& entry : Server::activeClients)
             {
-                SOCKET activeSock = entry.first;
-                shared_ptr<Client> client = entry.second;
+                SOCKET activeSock = it->first;
+                shared_ptr<Client> client = it->second;
 
                 if (FD_ISSET(activeSock, &exceptionSet))
                 {
                     cerr << "[오류] Exception on socket " << activeSock << endl;
 
-                    // 소켓을 닫는다.
-                    closesocket(activeSock);
+                    // 기존 접속에서 예정되어 있던 보내야하는 메시지들을 모두 없앤다.
+                    {
+                        lock_guard<mutex> lg(Logic::shouldSendPacketsMutex);
+
+                        Logic::shouldSendPackets[activeSock].clear();
+                    }
 
                     // 모든 키를 Expire한다.
                     Redis::ExpireUser(client->ID);
 
                     // 지울 대상에 포함시킨다.
-                    toDelete.push_back(activeSock);
+                    //toDelete.push_back(activeSock);
+
+                    // 해당 클라이언트를 지운다.
+                    Server::activeClients.erase(it++);
+
+                    // 소켓을 닫는다.
+                    if (activeSock != INVALID_SOCKET)
+                    {
+                        cout << "[Exception on socket] socket closed : " << activeSock << '\n';
+                        closesocket(activeSock);
+                    }
 
                     // 소켓을 닫은 경우 더 이상 처리할 필요가 없으니 아래 read 작업은 하지 않는다.
                     continue;
@@ -498,8 +530,12 @@ int main()
                 // 해당 클라이언트가 보내야하는 메시지를 모두 보낸 상태이고 그 클라이언트가 죽었거나 삭제되어야하면 없앤다.
                 if (client->sendTurn == false && Logic::shouldSendPackets[activeSock].empty() && client->shouldTerminate)
                 {
-                    // 소켓을 닫는다.
-                    closesocket(client->sock);
+                    // 기존 접속에서 예정되어 있던 보내야하는 메시지들을 모두 없앤다.
+                    {
+                        lock_guard<mutex> lg(Logic::shouldSendPacketsMutex);
+
+                        Logic::shouldSendPackets[activeSock].clear();
+                    }
 
                     // 유저가 죽었다면 해당 유저에 설정된 Redis의 모든 키를 제거한다.
                     if (stoi(Redis::GetHp(client->ID)) <= 0)
@@ -508,7 +544,17 @@ int main()
                     }
 
                     // 지울 대상에 포함시킨다.
-                    toDelete.push_back(activeSock);
+                    //toDelete.push_back(activeSock);   
+
+                    // 해당 클라이언트를 지운다.
+                    Server::activeClients.erase(it++);
+
+                    // 소켓을 닫는다.
+                    if (activeSock != INVALID_SOCKET)
+                    {
+                        cout << "[toDelete] socket closed : " << client->sock << '\n';
+                        closesocket(client->sock);
+                    }
 
                     continue;
                 }
@@ -532,30 +578,35 @@ int main()
                         }
                     }
                 }
+
+                ++it;
             }
         }
 
         // 기존 접속에서 예정되어 있던 보내야하는 메시지들을 모두 없앤다.
-        {
-            lock_guard<mutex> lg(Logic::shouldSendPacketsMutex);
+        //{
+        //    lock_guard<mutex> lg(Logic::shouldSendPacketsMutex);
 
-            for (auto& closedSock : toDelete)
-            {
-                while (!Logic::shouldSendPackets[closedSock].empty())
-                    Logic::shouldSendPackets[closedSock].pop_front();
-            }
-        }
+        //    for (auto& closedSock : toDelete)
+        //    {
+        //        while (!Logic::shouldSendPackets[closedSock].empty())
+        //            Logic::shouldSendPackets[closedSock].pop_front();
+        //    }
+        //}
 
-        // 지울 것이 있었다면 지운다.
-        {
-            lock_guard<mutex> lg(Server::activeClientsMutex);
+        //// 지울 것이 있었다면 지운다.
+        //{
+        //    lock_guard<mutex> lg(Server::activeClientsMutex);
 
-            for (auto& closedSock : toDelete)
-            {
-                // 맵에서 지우고 객체도 지워준다.
-                Server::activeClients.erase(closedSock);
-            }
-        }
+        //    for (auto& closedSock : toDelete)
+        //    {
+        //        // 소켓을 닫는다.
+        //        closesocket(closedSock);
+
+        //        // 맵에서 지우고 객체도 지워준다.
+        //        Server::activeClients.erase(closedSock);
+        //    }
+        //}
     }
 
     // 이제 threads 들을 join 한다.
@@ -563,11 +614,15 @@ int main()
         workerThread->join();
 
     // 연결을 기다리는 passive socket 을 닫는다.
-    r = closesocket(passiveSock);
-    if (r == SOCKET_ERROR) 
+    if (passiveSock != INVALID_SOCKET)
     {
-        cerr << "[오류] closesocket(passive) failed with error " << WSAGetLastError() << endl;
-        return 1;
+        cout << "[final] close socket : " << passiveSock << '\n';
+        r = closesocket(passiveSock);
+        if (r == SOCKET_ERROR) 
+        {
+            cerr << "[오류] closesocket(passive) failed with error " << WSAGetLastError() << endl;
+            return 1;
+        }
     }
 
     // Winsock 을 정리한다.
