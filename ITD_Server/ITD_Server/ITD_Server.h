@@ -314,6 +314,9 @@ namespace Json
 
 	// Info response
 	string GetInfoRespJson(const string& userID);
+
+	// 유저가 포션을 주울 때 나타나는 메시지를 json 형식으로 변환하는 함수
+	string GetPickUpPotionJson(const string& userID, Logic::PotionType potionType);
 }
 
 // redis 관련 네임스페이스
@@ -964,13 +967,19 @@ string Logic::ProcessAttack(const shared_ptr<Client>& client, const ParamsForPro
 		for (auto& deadSlimeIt : deadSlimeIts)
 		{
 			// 죽은 슬라임이 가지고 있던 포션을 유저가 획득한다.
-			if ((*deadSlimeIt)->potionType == Logic::PotionType::E_POTION_HP)
+			if ((*deadSlimeIt)->potionType == PotionType::E_POTION_HP)
 			{
 				Redis::SetHpPotion(client->ID, 1, Redis::F_Type::E_RELATIVE);
 			}
-			else if ((*deadSlimeIt)->potionType == Logic::PotionType::E_POTION_STR)
+			else if ((*deadSlimeIt)->potionType == PotionType::E_POTION_STR)
 			{
 				Redis::SetStrPotion(client->ID, 1, Redis::F_Type::E_RELATIVE);
+			}
+
+			{
+				lock_guard<mutex> lg(shouldSendPacketsMutex);
+
+				shouldSendPackets[client->sock].push_back(Json::GetPickUpPotionJson(client->ID, (*deadSlimeIt)->potionType));
 			}
 
 			slimes.erase(deadSlimeIt);
@@ -1307,6 +1316,21 @@ string Json::GetChatRespJson(const string& fromUserID, const string& text)
 string Json::GetInfoRespJson(const string& userID)
 {
 	string ret = "{\"" + string(TEXT) + "\":\"유저 정보\\r\\n유저 ID : " + userID + "\\r\\n유저 좌표 : (" + Redis::GetLocationX(userID) + ", " + Redis::GetLocationY(userID) + ")\\r\\n유저 HP : " + Redis::GetHp(userID) + "\\r\\n유저 STR : " + Redis::GetStr(userID) + "\\r\\n유저 HP 포션 개수 : " + Redis::GetHpPotion(userID) + "\\r\\n유저 STR 포션 개수 : " + Redis::GetStrPotion(userID) + "\"}";
+
+	return ret;
+}
+
+string Json::GetPickUpPotionJson(const string& userID, Logic::PotionType potionType)
+{
+	string ret = "{\"" + string(TEXT) + "\":\"";
+	if (potionType == Logic::PotionType::E_POTION_HP)
+	{
+		ret += "HP 포션을 획득했습니다.\"}";
+	}
+	else if (potionType == Logic::PotionType::E_POTION_STR)
+	{
+		ret += "STR 포션을 획득했습니다.\"}";
+	}
 
 	return ret;
 }
