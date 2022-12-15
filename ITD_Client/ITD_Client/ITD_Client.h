@@ -293,6 +293,14 @@ bool Logic::ReceiveData()
 	Document document;
 	document.Parse(json);
 
+	// 잘못된 메시지가 올 때 처리
+	// 프로그램을 종료시키지 않을 것이므로 true 반환
+	if (!document.IsObject())
+	{
+		cout << "[오류] 잘못된 패킷을 받았습니다.\n";
+		return true;
+	}
+
 	//cout << "Received json : " << json << '\n';
 	//cout << "Received text : " << document["text"].GetString() << '\n';
 	cout << document[Json::TEXT].GetString() << '\n';
