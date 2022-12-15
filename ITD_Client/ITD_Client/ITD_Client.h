@@ -146,12 +146,17 @@ namespace Bot
 	bool isBotMode = false;												// 봇모드가 활성화 됐는지를 나타내는 상태변수
 
 	static const int CMD_PERIOD = 1;									// 명령어를 고르는 시간 (초)
-	static const int CMD_NUM = 5;										// 랜덤으로 선택할 명령어 종류의 수
+	static const int CMD_NUM = 6;										// 랜덤으로 선택할 명령어 종류의 수
 	static const char* CMD_BOT[] =										// 랜덤으로 선택할 명령어 종류
 	{
-		Json::MOVE, Json::ATTACK, Json::MONSTERS, Json::USERS, Json::CHAT
+		Json::MOVE, Json::ATTACK, Json::MONSTERS, Json::USERS, Json::CHAT, Json::USE_POTION
 	};
 	static const char* CHAT_MSG = "Bot 모드에서 보내는 메시지입니다.";		// chat 명령어로 보낼 메시지
+	static const int NUM_OF_POTION = 2;									// 랜덤으로 선택할 포션 종류 개수
+	static const char* POTION_TYPE[] =									// 랜덤으로 선택할 포션 종류
+	{
+		Json::HP_POTION, Json::STR_POTION
+	};
 
 	typedef function<string(string)> BotHandler;
 	map<string, BotHandler> botHandlers;								// json 문자열로 변환하는 봇모드 함수 맵
@@ -171,6 +176,9 @@ namespace Bot
 	// chat 명령어에 대한 요청 메시지를 json 문자열로 변환하는 함수
 	string GetChatReqJson(const string& input);
 
+	// usepotion 명령어에 대한 요청 메시지를 json 문자열로 변환하는 함수
+	string GetUsePotionReqJson(const string& input);
+
 	// botHandlers 초기화하는 함수
 	void InitBotHandlers();
 }
@@ -188,6 +196,9 @@ namespace Rand
 	// 유저 이동 거리 범위 내의 정수 (-3 ~ 3)
 	uniform_int_distribution<int> moveDis(-1 * Logic::MOVE_DIS, Logic::MOVE_DIS);
 
+	// Bot 모드에서 선택할 포션 종류 내의 정수
+	uniform_int_distribution<int> potionDis(0, Bot::NUM_OF_POTION - 1);
+
 	// 명령어 랜덤 종류 반환
 	int GetRandomCmd()
 	{
@@ -200,6 +211,11 @@ namespace Rand
 		return moveDis(gen);
 	}
 
+	// 랜덤 포션 종류 반환
+	int GetRandomPotionType()
+	{
+		return potionDis(gen);
+	}
 }
 
 // namespace Logic definition
@@ -600,6 +616,13 @@ string Bot::GetChatReqJson(const string& input)
 	return Json::GetJson(input, toUserID, CHAT_MSG);
 }
 
+string Bot::GetUsePotionReqJson(const string& input)
+{
+	int potionType = Rand::GetRandomPotionType();
+
+	return Json::GetJson(input, POTION_TYPE[potionType]);
+}
+
 void Bot::InitBotHandlers()
 {
 	botHandlers[Json::MOVE] = GetMoveReqJson;
@@ -607,4 +630,5 @@ void Bot::InitBotHandlers()
 	botHandlers[Json::MONSTERS] = GetMonstersReqJson;
 	botHandlers[Json::USERS] = GetUsersReqJson;
 	botHandlers[Json::CHAT] = GetChatReqJson;
+	botHandlers[Json::USE_POTION] = GetUsePotionReqJson;
 }

@@ -486,7 +486,7 @@ int main()
         }
 
         // 오류 이벤트가 발생하는 소켓의 클라이언트는 제거한다.
-        list<SOCKET> toDelete;
+        //list<SOCKET> toDelete;
         {
             lock_guard<mutex> lg(Server::activeClientsMutex);
 
