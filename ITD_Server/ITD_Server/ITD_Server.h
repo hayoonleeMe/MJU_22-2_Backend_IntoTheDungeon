@@ -163,7 +163,11 @@ namespace Logic
 	// 슬라임을 num만큼 스폰하는 함수
 	void SpawnSlime(int num);
 
+	// Str 포션의 효과를 구현하는 함수
 	void StrPotion(const shared_ptr<Client>& client);
+
+	// 슬라임이 5초마다 공격할 수 있는 유저에게 공격을 수행하는 함수
+	void SlimeAttackCheck(const shared_ptr<Slime>& slime);
 }
 
 // 슬라임 클래스
@@ -1102,7 +1106,10 @@ void Logic::SpawnSlime(int num)
 
 		for (int i = 0; i < num; ++i)
 		{
-			slimes.push_back(shared_ptr<Slime>(new Slime()));
+			shared_ptr<Slime> slime(new Slime());
+			slimes.push_back(slime);
+			shared_ptr<thread> slimeAttackThread(new thread(SlimeAttackCheck, slime));
+			slimeAttackThread->detach();
 		}
 	}
 }
@@ -1135,8 +1142,6 @@ void Logic::StrPotion(const shared_ptr<Client>& client)
 				break;
 			}
 		}
-
-		
 	}
 	// 효과가 끝나기 전에 유저가 나가서 키가 Expire 된 상태일 때
 	else if (Redis::GetUserConnection(client->ID) == Redis::EXPIRED)
@@ -1144,6 +1149,51 @@ void Logic::StrPotion(const shared_ptr<Client>& client)
 		// Expire된 상태에서 str을 감소시켰기 때문에 Persist 상태가 된다.
 		// 따라서 str키를 다른 키의 남은 만료시간(TTL)만큼 다시 Expire한다.
 		Redis::ExpireKey(client->ID , Redis::STR, Redis::GetTTL(client->ID));
+	}
+}
+
+void Logic::SlimeAttackCheck(const shared_ptr<Slime>& slime)
+{
+	while (true)
+	{
+		if (slime->IsDead() || slime == nullptr)
+		{
+			return;
+		}
+
+		int slimeLocX = slime->locX;
+		int slimeLocY = slime->locY;
+		int slimeStr = slime->str;
+
+		for (auto& entry : Server::activeClients)
+		{
+			// 아직 로그인되지 않은 클라이언트라면 스킵
+			if (entry.second->ID == "")
+				continue;
+
+			// 없어져야하는 클라이언트면 스킵
+			if (entry.second->shouldTerminate)
+				continue;
+
+			int userLocX = stoi(Redis::GetLocationX(entry.second->ID));
+			int userLocY = stoi(Redis::GetLocationY(entry.second->ID));
+
+			// 슬라임의 공격 범위 안에 유저가 있으면
+			if ((slimeLocX - userLocX <= Slime::MAX_X_ATTACK_RANGE && slimeLocX - userLocX >= Slime::MIN_X_ATTACK_RANGE) &&
+				(slimeLocY - userLocY <= Slime::MAX_Y_ATTACK_RANGE && slimeLocY - userLocY >= Slime::MIN_Y_ATTACK_RANGE))
+			{
+				Logic::BroadcastToClients(Json::GetSlimeAttackUserJson(slime->index, entry.second->ID, slime->str));
+
+				// 공격 받은 클라이언트의 hp가 0일 때
+				if (entry.second->OnAttack(slime) <= 0)
+				{
+					Logic::BroadcastToClients(Json::GetUserDieJson(entry.second->ID, slime->index));
+				}
+			}
+		}
+
+		// 슬라임의 공격 주기만큼 sleep
+		this_thread::sleep_for(chrono::seconds(Slime::ATTACK_PERIOD));
 	}
 }
 

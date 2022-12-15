@@ -283,50 +283,6 @@ void SlimeGenerateThread()
     }
 }
 
-// 슬라임이 5초마다 공격할 수 있는 유저에게 공격 수행하는 함수
-void SlimeAttackCheckThread()
-{
-    while (true)
-    {
-        for (auto& slime : Logic::slimes)
-        {
-            int slimeLocX = slime->locX;
-            int slimeLocY = slime->locY;
-            int slimeStr = slime->str;
-
-            for (auto& entry : Server::activeClients)
-            {
-                // 아직 로그인되지 않은 클라이언트라면 스킵
-                if (entry.second->ID == "")
-                    continue;
-
-                // 사라져야하는 클라이언트면 스킵
-                if (entry.second->shouldTerminate)
-                    continue;
-
-                int userLocX = stoi(Redis::GetLocationX(entry.second->ID));
-                int userLocY = stoi(Redis::GetLocationY(entry.second->ID));
-
-                // 슬라임의 공격 범위 안에 유저가 있으면
-                if ((slimeLocX - userLocX <= Slime::MAX_X_ATTACK_RANGE && slimeLocX - userLocX >= Slime::MIN_X_ATTACK_RANGE) &&
-                    (slimeLocY - userLocY <= Slime::MAX_Y_ATTACK_RANGE && slimeLocY - userLocY >= Slime::MIN_Y_ATTACK_RANGE))
-                {
-                    Logic::BroadcastToClients(Json::GetSlimeAttackUserJson(slime->index, entry.second->ID, slime->str));
-
-                    // 공격 받은 클라이언트의 hp가 0일 때
-                    if (entry.second->OnAttack(slime) <= 0)
-                    {
-                        Logic::BroadcastToClients(Json::GetUserDieJson(entry.second->ID, slime->index));
-                    }
-                }
-            }
-        }
-        
-        // 슬라임의 공격 주기만큼 sleep
-        this_thread::sleep_for(chrono::seconds(Slime::ATTACK_PERIOD));
-    }
-}
-
 int main()
 {
     // 프로그램 이름 설정
@@ -373,7 +329,6 @@ int main()
     }
     // 슬라임 생성 및 공격 작업을 처리하는 쓰레드를 추가한다.
     threads.push_back(shared_ptr<thread>(new thread(SlimeGenerateThread)));
-    //threads.push_back(shared_ptr<thread>(new thread(SlimeAttackCheckThread)));
 
     while (true) 
     {
@@ -486,12 +441,10 @@ int main()
         }
 
         // 오류 이벤트가 발생하는 소켓의 클라이언트는 제거한다.
-        //list<SOCKET> toDelete;
         {
             lock_guard<mutex> lg(Server::activeClientsMutex);
 
             for (auto it = Server::activeClients.begin(); it != Server::activeClients.end();)
-            //for (auto& entry : Server::activeClients)
             {
                 SOCKET activeSock = it->first;
                 shared_ptr<Client> client = it->second;
@@ -509,9 +462,6 @@ int main()
 
                     // 모든 키를 Expire한다.
                     Redis::ExpireUser(client->ID);
-
-                    // 지울 대상에 포함시킨다.
-                    //toDelete.push_back(activeSock);
 
                     // 해당 클라이언트를 지운다.
                     Server::activeClients.erase(it++);
@@ -542,9 +492,6 @@ int main()
                     {
                         Redis::DeleteAllUserKeys(client->ID);
                     }
-
-                    // 지울 대상에 포함시킨다.
-                    //toDelete.push_back(activeSock);   
 
                     // 해당 클라이언트를 지운다.
                     Server::activeClients.erase(it++);
@@ -582,31 +529,6 @@ int main()
                 ++it;
             }
         }
-
-        // 기존 접속에서 예정되어 있던 보내야하는 메시지들을 모두 없앤다.
-        //{
-        //    lock_guard<mutex> lg(Logic::shouldSendPacketsMutex);
-
-        //    for (auto& closedSock : toDelete)
-        //    {
-        //        while (!Logic::shouldSendPackets[closedSock].empty())
-        //            Logic::shouldSendPackets[closedSock].pop_front();
-        //    }
-        //}
-
-        //// 지울 것이 있었다면 지운다.
-        //{
-        //    lock_guard<mutex> lg(Server::activeClientsMutex);
-
-        //    for (auto& closedSock : toDelete)
-        //    {
-        //        // 소켓을 닫는다.
-        //        closesocket(closedSock);
-
-        //        // 맵에서 지우고 객체도 지워준다.
-        //        Server::activeClients.erase(closedSock);
-        //    }
-        //}
     }
 
     // 이제 threads 들을 join 한다.
