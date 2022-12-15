@@ -386,7 +386,7 @@ namespace Redis
 		{
 			lock_guard<mutex> lg(redisMutex);
 
-			reply = (redisReply*)redisCommand(Redis::redis, getCmd.c_str());
+			reply = (redisReply*)redisCommand(redis, getCmd.c_str());
 			if (reply->type == REDIS_REPLY_STRING)
 				ret = reply->str;
 		}
@@ -405,7 +405,7 @@ namespace Redis
 		{
 			lock_guard<mutex> lg(redisMutex);
 
-			reply = (redisReply*)redisCommand(Redis::redis, getCmd.c_str());
+			reply = (redisReply*)redisCommand(redis, getCmd.c_str());
 			if (reply->type == REDIS_REPLY_STRING)
 				ret = reply->str;
 		}
@@ -424,7 +424,7 @@ namespace Redis
 		{
 			lock_guard<mutex> lg(redisMutex);
 
-			reply = (redisReply*)redisCommand(Redis::redis, getCmd.c_str());
+			reply = (redisReply*)redisCommand(redis, getCmd.c_str());
 			if (reply->type == REDIS_REPLY_STRING)
 				ret = reply->str;
 		}
@@ -443,7 +443,7 @@ namespace Redis
 		{
 			lock_guard<mutex> lg(redisMutex);
 
-			reply = (redisReply*)redisCommand(Redis::redis, getCmd.c_str());
+			reply = (redisReply*)redisCommand(redis, getCmd.c_str());
 			if (reply->type == REDIS_REPLY_STRING)
 				ret = reply->str;
 		}
@@ -462,7 +462,7 @@ namespace Redis
 		{
 			lock_guard<mutex> lg(redisMutex);
 
-			reply = (redisReply*)redisCommand(Redis::redis, getCmd.c_str());
+			reply = (redisReply*)redisCommand(redis, getCmd.c_str());
 			if (reply->type == REDIS_REPLY_STRING)
 				ret = reply->str;
 		}
@@ -481,7 +481,7 @@ namespace Redis
 		{
 			lock_guard<mutex> lg(redisMutex);
 
-			reply = (redisReply*)redisCommand(Redis::redis, getCmd.c_str());
+			reply = (redisReply*)redisCommand(redis, getCmd.c_str());
 			if (reply->type == REDIS_REPLY_STRING)
 				ret = reply->str;
 		}
@@ -500,7 +500,7 @@ namespace Redis
 		{
 			lock_guard<mutex> lg(redisMutex);
 
-			reply = (redisReply*)redisCommand(Redis::redis, ttlCmd.c_str());
+			reply = (redisReply*)redisCommand(redis, ttlCmd.c_str());
 		}
 
 		if (reply->type == REDIS_REPLY_INTEGER)
@@ -555,11 +555,11 @@ namespace Redis
 		{
 			lock_guard<mutex> lg(redisMutex);
 
-			reply = (redisReply*)redisCommand(Redis::redis, setCmd1.c_str());
+			reply = (redisReply*)redisCommand(redis, setCmd1.c_str());
 			if (reply->type == REDIS_REPLY_ERROR)
 				cout << "Redis Command Error : " << setCmd1 << '\n';
 
-			reply = (redisReply*)redisCommand(Redis::redis, setCmd2.c_str());
+			reply = (redisReply*)redisCommand(redis, setCmd2.c_str());
 			if (reply->type == REDIS_REPLY_ERROR)
 				cout << "Redis Command Error : " << setCmd2 << '\n';
 		}
@@ -588,7 +588,7 @@ namespace Redis
 		{
 			lock_guard<mutex> lg(redisMutex);
 
-			reply = (redisReply*)redisCommand(Redis::redis, setCmd.c_str());
+			reply = (redisReply*)redisCommand(redis, setCmd.c_str());
 		}
 
 		if (reply->type == REDIS_REPLY_ERROR)
@@ -618,7 +618,7 @@ namespace Redis
 		{
 			lock_guard<mutex> lg(redisMutex);
 
-			reply = (redisReply*)redisCommand(Redis::redis, setCmd.c_str());
+			reply = (redisReply*)redisCommand(redis, setCmd.c_str());
 		}
 
 		if (reply->type == REDIS_REPLY_ERROR)
@@ -647,7 +647,7 @@ namespace Redis
 		{
 			lock_guard<mutex> lg(redisMutex);
 
-			reply = (redisReply*)redisCommand(Redis::redis, setCmd.c_str());
+			reply = (redisReply*)redisCommand(redis, setCmd.c_str());
 		}
 
 		if (reply->type == REDIS_REPLY_ERROR)
@@ -676,7 +676,7 @@ namespace Redis
 		{
 			lock_guard<mutex> lg(redisMutex);
 
-			reply = (redisReply*)redisCommand(Redis::redis, setCmd.c_str());
+			reply = (redisReply*)redisCommand(redis, setCmd.c_str());
 		}
 
 		if (reply->type == REDIS_REPLY_ERROR)
