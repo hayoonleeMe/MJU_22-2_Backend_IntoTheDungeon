@@ -102,7 +102,7 @@ int main()
                 Logic::ExitProgram();
 
             // CMD_PERIOD 초 마다 명령어를 실행한다.
-            this_thread::sleep_for(chrono::seconds(Bot::CMD_PERIOD));
+            this_thread::sleep_for(chrono::seconds(Bot::CMD_SELECT_PERIOD));
         }
     }
 

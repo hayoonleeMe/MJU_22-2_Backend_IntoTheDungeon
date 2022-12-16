@@ -31,7 +31,7 @@ SOCKET createPassiveSocket()
     return passiveSock;
 }
 
-bool processClient(shared_ptr<Client> client)
+bool processClient(shared_ptr<Client>& client)
 {
     SOCKET activeSock = client->sock;
 
@@ -362,8 +362,8 @@ int main()
                     FD_SET(activeSock, &exceptionSet);
                     maxSock = max(maxSock, activeSock);
 
-                    // 이 클라이언트가 데이터를 보낼 차례이면 jobQueue에 넣을 수 있도록 sendCount를 증가시킨다.
-                    if (client->sendTurn)
+                    // 만약 해당 클라이언트가 죽었거나 중복 로그인으로 인해 제거되어야 하거나 데이터를 보내기 위해 작업 큐에 넣어져야 한다면 shouldPass를 true로 세팅
+                    if (client->shouldTerminate || client->sendTurn)
                     {
                         shouldPass = true;
                     }
@@ -383,12 +383,6 @@ int main()
                                 shouldPass = true;
                             }
                         }
-                    }
-
-                    // 만약 해당 클라이언트가 죽었거나 중복 로그인으로 인해 제거되어야 하면
-                    if (client->shouldTerminate)
-                    {
-                        shouldPass = true;
                     }
                 }
             }
@@ -421,7 +415,6 @@ int main()
             struct sockaddr_in clientAddr;
             int clientAddrSize = sizeof(clientAddr);
             SOCKET activeSock = accept(passiveSock, (sockaddr*)&clientAddr, &clientAddrSize);
-
             if (activeSock == INVALID_SOCKET) 
             {
                 cerr << "[오류] accept failed with error " << WSAGetLastError() << endl;
@@ -477,8 +470,8 @@ int main()
                     continue;
                 }
 
-                // 해당 클라이언트가 보내야하는 메시지를 모두 보낸 상태이고 그 클라이언트가 죽었거나 삭제되어야하면 없앤다.
-                if (client->sendTurn == false && Logic::shouldSendPackets[activeSock].empty() && client->shouldTerminate)
+                // 해당 클라이언트가 처리해야 할 작업을 모두 완료한 상태이고 그 클라이언트가 죽었거나 삭제되어야하면 없앤다.
+                if (client->shouldTerminate && Logic::shouldSendPackets[activeSock].empty() && client->doingProc.load() == false)
                 {
                     // 기존 접속에서 예정되어 있던 보내야하는 메시지들을 모두 없앤다.
                     {

@@ -145,7 +145,7 @@ namespace Bot
 {
 	bool isBotMode = false;												// 봇모드가 활성화 됐는지를 나타내는 상태변수
 
-	static const int CMD_PERIOD = 1;									// 명령어를 고르는 시간 (초)
+	static const int CMD_SELECT_PERIOD = 1;								// 명령어를 고르는 시간 (초)
 	static const int CMD_NUM = 6;										// 랜덤으로 선택할 명령어 종류의 수
 	static const char* CMD_BOT[] =										// 랜덤으로 선택할 명령어 종류
 	{
@@ -157,6 +157,9 @@ namespace Bot
 	{
 		Json::HP_POTION, Json::STR_POTION
 	};
+
+	// 테스트를 위해 클라이언트의 이름을 1~30 사이로 설정한다고 가정한다.
+	static const int MAX_NUM_OF_TEST_CLIENTS = 30;						// 테스트를 위한 최대 클라이언트 수
 
 	typedef function<string(string)> BotHandler;
 	map<string, BotHandler> botHandlers;								// json 문자열로 변환하는 봇모드 함수 맵
@@ -199,6 +202,9 @@ namespace Rand
 	// Bot 모드에서 선택할 포션 종류 내의 정수
 	uniform_int_distribution<int> potionDis(0, Bot::NUM_OF_POTION - 1);
 
+	// Bot 모드에서 선택할 다른 유저 ID
+	uniform_int_distribution<int> userDis(1, Bot::MAX_NUM_OF_TEST_CLIENTS);
+
 	// 명령어 랜덤 종류 반환
 	int GetRandomCmd()
 	{
@@ -215,6 +221,12 @@ namespace Rand
 	int GetRandomPotionType()
 	{
 		return potionDis(gen);
+	}
+
+	// 랜덤 유저 ID 반환
+	int GetRandomUserID()
+	{
+		return userDis(gen);
 	}
 }
 
@@ -257,7 +269,7 @@ bool Logic::ReceiveData()
 {
 	int r = 0;
 	// 길이 정보를 받기 위해서 4바이트를 읽는다.
-	// network byte order 로 전성되기 때문에 ntohl() 을 호출한다.
+	// network byte order 로 전송되기 때문에 ntohl() 을 호출한다.
 	//std::cout << "Receiving length info" << std::endl;
 	int dataLenNetByteOrder;
 	int offset = 0;
@@ -604,7 +616,9 @@ string Bot::GetUsersReqJson(const string& input)
 
 string Bot::GetChatReqJson(const string& input)
 {
-	string toUserID = "hayoon";
+	// 1~30 까지 랜덤한 숫자를 받아 보낸다.
+	// 테스트를 위해 클라이언트의 이름을 1~30 사이로 설정한다고 가정한다.
+	string toUserID = to_string(Rand::GetRandomUserID());
 
 	// userID가 유저 자신이면 오류
 	if (toUserID == Client::ID)

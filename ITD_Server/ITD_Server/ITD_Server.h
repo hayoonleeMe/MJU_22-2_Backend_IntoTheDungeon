@@ -269,7 +269,7 @@ namespace Json
 	static const char* PARAM2 = "param2";
 
 	static const char* LOGIN = "login";
-	static const char* MOVE = "move";
+	static const char* MOVE = "move";	
 	static const char* ATTACK = "attack";
 	static const char* MONSTERS = "monsters";
 	static const char* USERS = "users";
@@ -888,10 +888,6 @@ int Client::OnAttack(const shared_ptr<Slime>& slime)
 	cout << "[" << sock << "] " << ID << " is On Attack by slime" << slime->index << ", remain hp : " << stoi(Redis::GetHp(ID)) << '\n';
 
 	int nowHp = stoi(Redis::GetHp(ID));
-	if (nowHp <= 0)
-	{
-		shouldTerminate = true;
-	}
 
 	return nowHp;
 }
@@ -904,6 +900,11 @@ void Logic::BroadcastToClients(const string& message)
 
 		for (auto& entry : Server::activeClients)
 		{
+			if (entry.second->shouldTerminate)
+			{
+				continue;
+			}
+
 			shouldSendPackets[entry.first].push_back(message);
 		}
 	}
@@ -976,6 +977,7 @@ string Logic::ProcessAttack(const shared_ptr<Client>& client, const ParamsForPro
 				Redis::SetStrPotion(client->ID, 1, Redis::F_Type::E_RELATIVE);
 			}
 
+			if (!client->shouldTerminate)
 			{
 				lock_guard<mutex> lg(shouldSendPacketsMutex);
 
@@ -1024,6 +1026,7 @@ string Logic::ProcessChat(const shared_ptr<Client>& client, const ParamsForProc&
 	}
 
 	// 유저가 존재할 때
+	if (!client->shouldTerminate)
 	{
 		lock_guard<mutex> lg(shouldSendPacketsMutex);
 
@@ -1197,6 +1200,7 @@ void Logic::SlimeAttackCheck(const shared_ptr<Slime>& slime)
 				if (entry.second->OnAttack(slime) <= 0)
 				{
 					Logic::BroadcastToClients(Json::GetUserDieJson(entry.second->ID, slime->index));
+					entry.second->shouldTerminate = true;
 				}
 			}
 		}
