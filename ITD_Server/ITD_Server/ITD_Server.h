@@ -108,8 +108,7 @@ namespace Logic
 	static const int NUM_POTION_TYPE = 2;			// 포션 타입 수
 	static const int HP_POTION_HEAL = 10;			// hp 포션 체력 증가량
 	static const int STR_POTION_DAMAGE = 3;			// str 포션 공격력 증가량
-	// TODO : str 포션 지속시간 변경 필요 -> 60(1분)
-	static const int STR_POTION_DURATION = 20;		// str 포션 지속시간 (초)
+	static const int STR_POTION_DURATION = 60;		// str 포션 지속시간 (초)
 
 	// 포션 타입을 나타내는 enum class
 	enum class PotionType
@@ -325,6 +324,7 @@ namespace Redis
 	// hiredis 
 	redisContext* redis;
 	mutex redisMutex;
+	static const int DEFAULT_REDIS_PORT = 6379;
 
 	// 사용할 함수 타입
 	enum class F_Type
@@ -336,8 +336,7 @@ namespace Redis
 	// ID가 존재할 때의 반환값
 	static const int EXIST_ID = 1;
 
-	// TODO : 키 만료 시간 수정 필요 -> 300(5분)
-	static const char* EXPIRE_TIME = "30";			// 키 만료 시간 (초)
+	static const char* EXPIRE_TIME = "300";			// 키 만료 시간 (초)
 	static const char* LOGINED = "1";				// USER:ID의 이미 로그인 중일 때의 value 값
 	static const char* EXPIRED = "0";				// USER:ID의 Expire 됐을 때의 value 값
 

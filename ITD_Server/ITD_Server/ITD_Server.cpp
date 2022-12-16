@@ -289,8 +289,7 @@ int main()
     system("title Into The Dungeon Server");
 
     // hiredis 연결
-    // TODO : redis 연결 포트번호 수정 필요  -> SERVER_PORT
-    Redis::redis = redisConnect(Server::SERVER_ADDRESS, 6379);
+    Redis::redis = redisConnect(Server::SERVER_ADDRESS, Redis::DEFAULT_REDIS_PORT);
     if (Redis::redis == NULL || Redis::redis->err)
     {
         if (Redis::redis)
