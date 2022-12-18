@@ -31,6 +31,37 @@ SOCKET createPassiveSocket()
     return passiveSock;
 }
 
+SOCKET createRestPassiveSocket()
+{
+    // TCP socket 을 만든다.
+    SOCKET passiveSock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (passiveSock == INVALID_SOCKET) {
+        cerr << "[오류] socket failed with error " << WSAGetLastError() << endl;
+        return 1;
+    }
+
+    // socket 을 특정 주소, 포트에 바인딩 한다.
+    struct sockaddr_in serverAddr;
+    memset(&serverAddr, 0, sizeof(serverAddr));
+    serverAddr.sin_family = AF_INET;
+    serverAddr.sin_port = htons(Rest::REST_SERVER_PORT);
+    inet_pton(AF_INET, Rest::REST_SERVER_ADDRESS, &serverAddr.sin_addr.s_addr);
+
+    int r = ::bind(passiveSock, (sockaddr*)&serverAddr, sizeof(serverAddr));
+    if (r == SOCKET_ERROR) {
+        cerr << "[오류] bind failed with error " << WSAGetLastError() << endl;
+        return 1;
+    }
+
+    r = listen(passiveSock, 10);
+    if (r == SOCKET_ERROR) {
+        cerr << "[오류] listen failed with error " << WSAGetLastError() << endl;
+        return 1;
+    }
+
+    return passiveSock;
+}
+
 bool processClient(shared_ptr<Client>& client)
 {
     SOCKET activeSock = client->sock;
@@ -215,6 +246,177 @@ bool processClient(shared_ptr<Client>& client)
     return true;
 }
 
+bool processHttpReq(shared_ptr<Client>& client)
+{
+    SOCKET activeSock = client->sock;
+
+    // 패킷을 받는다.
+    if (client->sendTurn == false)
+    {
+        // Header 를 읽는다.
+        if (client->lenCompleted == false)
+        {
+            // 1바이트씩 받을 때마다 다시 Worker Thread를 돌려주는 것은 비효율적이므로 다소 blocking 되더라도 Header를 한번에 읽는다.
+            while (client->lenCompleted == false)
+            {
+                // network byte order 로 전송되기 때문에 ntohl() 을 호출한다.
+                int r = recv(activeSock, client->packet + client->offset, 1, 0);
+                if (r == SOCKET_ERROR)
+                {
+                    cerr << "[오류] [" << activeSock << "] recv failed with error " << WSAGetLastError() << endl;
+                    return false;
+                }
+                else if (r == 0)
+                {
+                    // 메뉴얼을 보면 recv() 는 소켓이 닫힌 경우 0 을 반환함을 알 수 있다.
+                    cerr << "[오류] [" << activeSock << "] Socket closed" << endl;
+                    return false;
+                }
+                client->offset += r;
+
+                // 한 줄을 다 읽었을 때 (client->offset 개의 문자를 읽었을 때 마지막 2개가 \r\n
+                if (client->offset >= 2 && client->packet[client->offset - 2] == '\r' && client->packet[client->offset - 1] == '\n')
+                {
+                    cout << "\nin first condition\n";
+                    // Header 부분을 모두 읽은 경우 (header를 body와 구분할 때 \r\n만 있는 줄로 구분하므로)
+                    if (client->offset == 2 && client->packet[0] == '\r' && client->packet[1] == '\n')
+                    {
+                        cout << "in Header 부분을 모두 읽은 경우 " << client->packet;
+                        client->lenCompleted = true;
+                    }
+                    // Header 속성 하나를 모두 읽은 경우
+                    else
+                    {
+                        cout << "in Header 속성 하나를 모두 읽은 경우 " << client->packet;
+                        // 문자열을 \r\n 이전까지로 자른다.
+                        client->packet[client->offset - 2] = '\0';
+                        string header = client->packet;
+                        vector<string> splited;
+                        Logic::Split(header, splited, ':');
+
+                        // Header Field가 읽혔을 때 (Host: 127.0.0.1:27016)
+                        if (splited.size() >= 2)
+                        {
+                            string key = splited[0];
+
+                            // body 길이 설정
+                            if (key == Rest::CONTENT_LENGTH)
+                            {
+                                string value = splited[1];
+                                client->packetLen = atoi(value.c_str());
+                            }
+
+                            /*string value = "";
+                            for (int i = 1; i < splited.size(); ++i)
+                            {
+                                value += splited[i];
+                            }
+                            Logic::Trim(value);
+                            cout << "key : " << key << '\n';
+                            cout << "val : " << value << '\n';*/
+                        }
+                        // First Line이 읽혔을 때 (GET / HTTP/1.1)
+                        else if (splited.size() == 1)
+                        {
+                            vector<string> splited;
+                            Logic::Split(header, splited, ' ');
+
+                            client->restful.method = splited[0];
+                            client->restful.params = splited[1];
+
+                            // GET 요청의 경우 body가 필요 없으므로 body 길이는 0
+                            if (client->restful.method == Rest::GET)
+                            {
+                                client->packetLen = 0;
+                            }
+
+                            /*string protocol = splited[2];
+                            cout << "Method : " << method << '\n';
+                            cout << "Uri : " << params << '\n';
+                            cout << "Protocol : " << protocol << '\n';*/
+                        }
+
+                        // 버퍼 초기화
+                        memset(client->packet, 0, Client::PACKET_SIZE);
+                    }
+                    client->offset = 0;
+                }
+            }
+        }
+
+        // 여기까지 도달했다는 것은 packetLen 을 완성한 경우다. (== lenCompleted 가 true)
+        if (client->lenCompleted == false)
+        {
+            return true;
+        }
+
+        // 받을게 있다면 받는다.
+        if (client->packetLen != 0)
+        {
+            // Body 부분을 읽는다.
+            int r = recv(activeSock, client->packet + client->offset, client->packetLen - client->offset, 0);
+            if (r == SOCKET_ERROR)
+            {
+                cerr << "[오류] [" << activeSock << "] send failed with error " << WSAGetLastError() << endl;
+                return false;
+            }
+            else if (r == 0)
+            {
+                // 메뉴얼을 보면 recv() 는 소켓이 닫힌 경우 0 을 반환함을 알 수 있다.
+                // 따라서 r == 0 인 경우도 loop 을 탈출하게 해야된다.
+                return false;
+            }
+            client->offset += r;
+        }
+
+        // 모든 데이터를 받으면 처리한다.
+        if (client->offset == client->packetLen)
+        {
+            //client->packet[client->offset] = '\0'; // 버퍼의 뒤 쓰레기값부분은 자르도록 널 문자를 추가
+            cout << "처리 전 : " << client->packet << '\n';
+
+            client->lenCompleted = false;
+            client->offset = 0;
+            client->sendTurn = true;
+
+            vector<string> splited;
+            Logic::Split(client->restful.params, splited, '=');
+            const string text = splited[1];
+
+            client->sendPacket = Rest::ProcessHttpCmd(text, client);
+            client->packetLen = client->sendPacket.length();
+            
+        }
+
+        return true;
+    }
+
+    // 받은 패킷에 대한 응답을 보낸다.
+    if (client->sendTurn)
+    {
+        // 데이터를 보낸다.
+        int r = send(activeSock, client->sendPacket.c_str() + client->offset, client->packetLen - client->offset, 0);
+        if (r == SOCKET_ERROR)
+        {
+            cerr << "[오류] [" << activeSock << "] send failed with error " << WSAGetLastError() << endl;
+            return false;
+        }
+        client->offset += r;
+
+        // 데이터를 모두 보냈다면
+        if (client->offset == client->packetLen)
+        {
+            // 다음 패킷을 위해 패킷 관련 정보를 초기화한다.
+            client->sendTurn = false;
+            client->lenCompleted = false;
+            client->offset = 0;
+            client->packetLen = 0;
+        }
+    }
+
+    return true;
+}
+
 void workerThreadProc() 
 {
     while (true) 
@@ -235,7 +437,16 @@ void workerThreadProc()
         if (client) 
         {
             SOCKET activeSock = client->sock;
-            bool successful = processClient(client);
+            bool successful = false;
+            if (client->restful.isRestful)
+            {
+                successful = processHttpReq(client);
+            }
+            else
+            {
+                successful = processClient(client);
+            }
+
             if (successful == false) 
             {
                 // 기존 접속에서 예정되어 있던 보내야하는 메시지들을 모두 없앤다.
@@ -318,6 +529,7 @@ int main()
 
     // passive socket 을 만들어준다.
     SOCKET passiveSock = createPassiveSocket();
+    SOCKET restPassiveSock = createRestPassiveSocket();
 
     // 작업을 처리하는 쓰레드를 추가한다.
     list<shared_ptr<thread> > threads;
@@ -344,7 +556,9 @@ int main()
 
         FD_SET(passiveSock, &readSet);
         FD_SET(passiveSock, &exceptionSet);
-        maxSock = max(maxSock, passiveSock);
+        FD_SET(restPassiveSock, &readSet);
+        FD_SET(restPassiveSock, &exceptionSet);
+        maxSock = max(maxSock, max(passiveSock, restPassiveSock));
 
         // 현재 남아있는 active socket 들에 대해서도 모두 set 에 넣어준다.
         {
@@ -370,7 +584,7 @@ int main()
                     else
                     {
                         // 로그인된 클라이언트가 작업해야할 것이 아무것도 없는 클라이언트이므로 보내야하는 패킷이 있다면 보내도록 설정해준다.
-                        if (client->ID != "" && !Logic::shouldSendPackets[client->sock].empty())
+                        if (client->restful.isRestful == false && client->ID != "" && !Logic::shouldSendPackets[client->sock].empty())
                         {
                             {
                                 lock_guard<mutex> lg(Logic::shouldSendPacketsMutex);
@@ -428,6 +642,32 @@ int main()
                 char strBuf[1024];
                 inet_ntop(AF_INET, &(clientAddr.sin_addr), strBuf, sizeof(strBuf));
                 cout << "[시스템] New client from " << strBuf << ":" << ntohs(clientAddr.sin_port) << ". "
+                    << "Socket: " << activeSock << endl;
+            }
+        }
+        // rest passive socket 이 readable 하다면 이는 새 REST 연결이 들어왔다는 것이다.
+        else if (FD_ISSET(restPassiveSock, &readSet))
+        {
+            // passive socket 을 이용해 accept() 를 한다.
+            cout << "[시스템] Waiting for a REST connection" << endl;
+            struct sockaddr_in clientAddr;
+            int clientAddrSize = sizeof(clientAddr);
+            SOCKET activeSock = accept(restPassiveSock, (sockaddr*)&clientAddr, &clientAddrSize);
+            if (activeSock == INVALID_SOCKET)
+            {
+                cerr << "[오류] accept failed with error " << WSAGetLastError() << endl;
+                return 1;
+            }
+            else
+            {
+                shared_ptr<Client> newClient(new Client(activeSock));
+                newClient->restful.isRestful = true;
+
+                Server::activeClients.insert(make_pair(activeSock, newClient));
+
+                char strBuf[1024];
+                inet_ntop(AF_INET, &(clientAddr.sin_addr), strBuf, sizeof(strBuf));
+                cout << "[시스템] New REST client from " << strBuf << ":" << ntohs(clientAddr.sin_port) << ". "
                     << "Socket: " << activeSock << endl;
             }
         }

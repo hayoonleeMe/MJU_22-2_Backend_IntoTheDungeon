@@ -18,6 +18,7 @@
 #include <mutex>
 #include <queue>
 #include <random>
+#include <sstream>
 #include <thread>
 #define NOMINMAX
 #include <WinSock2.h>
@@ -35,6 +36,13 @@ class Slime;
 // 서버로 로그인된 유저 클라이언트
 class Client
 {
+	struct Restful
+	{
+		bool isRestful;							// RESTful API 연결인지를 나타내는 상태변수
+		string method;							// Http 요청의 method
+		string params;							// Http 요청의 파라미터
+	};
+
 public:
 	Client(SOCKET sock);
 
@@ -44,6 +52,8 @@ public:
 	int OnAttack(const shared_ptr<Slime>& slime);
 
 public:
+	struct Restful restful;
+
 	SOCKET sock;								// 이 클라이언트의 active socket
 	string ID;									// 로그인된 유저의 ID
 
@@ -85,6 +95,29 @@ namespace Server
 
 	// ID를 가진 기존의 접속을 모두 종료한다.
 	void TerminateRemainUser(const string& ID);
+}
+
+namespace Rest
+{
+	static const char* REST_SERVER_ADDRESS = "127.0.0.1";	// 서버 주소
+	static const unsigned short REST_SERVER_PORT = 27016;	// 서버 포트
+
+	static const char* GET = "GET";
+	static const char* POST = "POST";
+	static const char* CONTENT_LENGTH = "Content-Length";
+
+	static const char* RESPONSE_CONTENT_TYPE = "\r\nContent-Type: application/json\r\n\r\n";
+	static const char* RESPONSE_STATUS_SUCCESSFUL = "HTTP / 1.1 200 OK\r\nContent-Length: ";
+	static const char* RESPONSE_STATUS_FAILED = "HTTP / 1.1 400 Bad Request\r\nContent-Length: ";
+
+	enum class Response_Status
+	{
+		E_SUCCESSFUL,
+		E_FAILED,
+	};
+
+	string ProcessHttpCmd(const string& text, shared_ptr<Client>& client);
+	string GetHttpResponse(Response_Status rStatus, const string& content);
 }
 
 // 내부 로직 관련 네임스페이스
@@ -167,6 +200,43 @@ namespace Logic
 
 	// 슬라임이 5초마다 공격할 수 있는 유저에게 공격을 수행하는 함수
 	void SlimeAttackCheck(const shared_ptr<Slime>& slime);
+
+	void Split(const string& text, vector<string>& splited, char delimiter)
+	{
+		istringstream ss(text);
+		string stringBuffer;
+		splited.clear();
+		while (getline(ss, stringBuffer, delimiter))
+		{
+			splited.push_back(stringBuffer);
+		}
+	}
+
+	// trim from left 
+	string& Ltrim(string& s, const char* t = " \t\n\r\f\v")
+	{
+		s.erase(0, s.find_first_not_of(t));
+		return s;
+	}
+
+	// trim from right 
+	string& Rtrim(string& s, const char* t = " \t\n\r\f\v")
+	{
+		s.erase(s.find_last_not_of(t) + 1);
+		return s;
+	}
+
+	// trim from left & right 
+	string& Trim(string& s, const char* t = " \t\n\r\f\v")
+	{
+		return Ltrim(Rtrim(s, t), t);
+	}
+
+	string convertToJson() {
+		char jsonData[8192];
+		sprintf_s(jsonData, sizeof(jsonData), "{\"tag\": \"position\", \"x\": %d, \"y\": %d}", 10, 10);
+		return jsonData;
+	}
 }
 
 // 슬라임 클래스
@@ -873,6 +943,7 @@ void Server::TerminateRemainUser(const string& ID)
 Client::Client(SOCKET sock) : sock(sock), sendTurn(false), doingProc(false), lenCompleted(false), packetLen(0), offset(0), ID(""), sendPacket(""), shouldTerminate(false)
 {
 	memset(packet, 0, Client::PACKET_SIZE);
+	restful = { false };
 }
 
 Client::~Client()
@@ -890,6 +961,143 @@ int Client::OnAttack(const shared_ptr<Slime>& slime)
 
 	return nowHp;
 }
+
+// namespace Rest Definition
+string Rest::ProcessHttpCmd(const string& text, shared_ptr<Client>& client)
+{
+	// attack, monsters, users
+	if (client->restful.method == GET)
+	{
+		if (client->ID == "")
+		{
+			return GetHttpResponse(Response_Status::E_FAILED, "로그인을 먼저 해야합니다.");
+		}
+		else
+		{
+			if (text == Json::ATTACK)
+			{
+				return GetHttpResponse(Response_Status::E_SUCCESSFUL, Logic::ProcessAttack(client, {}));
+			}
+			else if (text == Json::MONSTERS)
+			{
+				return GetHttpResponse(Response_Status::E_SUCCESSFUL, Logic::ProcessMonsters(client, {}));
+			}
+			else if (text == Json::USERS)
+			{
+				return GetHttpResponse(Response_Status::E_SUCCESSFUL, Logic::ProcessUsers(client, {}));
+			}
+			else
+			{
+				return GetHttpResponse(Response_Status::E_FAILED, "잘못된 method입니다.");
+			}
+		}
+	}
+	// login, move
+	else if (client->restful.method == POST)
+	{
+		string body = client->packet;
+
+		if (text == Json::LOGIN)
+		{
+			// 이미 로그인 됐을 때
+			if (client->ID != "")
+			{
+				return GetHttpResponse(Response_Status::E_FAILED, "이미 로그인에 성공했습니다.");
+			}
+			else
+			{
+				// 옳은 요청 (id = ID)
+				if (body.find('?') == string::npos)
+				{
+					vector<string> idSplited;
+					Logic::Split(body, idSplited, '=');
+					string ID = idSplited[1];
+
+					string content = Redis::RegisterUser(ID, client->sock);
+
+					if (client->ID == "")
+						client->ID = ID;
+
+					return GetHttpResponse(Response_Status::E_SUCCESSFUL, content);
+				}
+				// 잘못된 요청
+				else
+				{
+					return GetHttpResponse(Response_Status::E_FAILED, "Body의 key-value가 잘못되었습니다.");
+				}
+			}
+		}
+		else if (text == Json::MOVE)
+		{
+			// 로그인 필요
+			if (client->ID == "")
+			{
+				return GetHttpResponse(Response_Status::E_FAILED, "로그인을 먼저 해야합니다.");
+			}
+			// 로그인 완료 후
+			else
+			{
+				// 옳은 요청 (x = X, y = Y)
+				if (body.find('?') != string::npos)
+				{
+					vector<string> bodySplited;
+					Logic::Split(body, bodySplited, '?');
+
+					if (bodySplited.size() != 2)
+					{
+						return GetHttpResponse(Response_Status::E_FAILED, "Body의 key-value가 잘못되었습니다.");
+					}
+
+					// x 좌표 추출
+					vector<string> xSplited;
+					Logic::Split(bodySplited[0], xSplited, '=');
+
+					// 잘못된 요청
+					if (xSplited[0] != "x")
+					{
+						return GetHttpResponse(Response_Status::E_FAILED, "Body의 key-value가 잘못되었습니다.");
+					}
+
+					string x = xSplited[1];
+
+					// y 좌표 추출
+					vector<string> ySplited;
+					Logic::Split(bodySplited[1], ySplited, '=');
+
+					// 잘못된 요청
+					if (ySplited[0] != "y")
+					{
+						return GetHttpResponse(Response_Status::E_FAILED, "Body의 key-value가 잘못되었습니다.");
+					}
+
+					string y = ySplited[1];
+
+					return GetHttpResponse(Response_Status::E_SUCCESSFUL, Logic::ProcessMove(client, { x, y }));
+				}
+				// 잘못된 요청
+				else
+				{
+					return GetHttpResponse(Response_Status::E_FAILED, "Body의 key-value가 잘못되었습니다.");
+				}
+			}
+		}
+		else
+		{
+			return GetHttpResponse(Response_Status::E_FAILED, "잘못된 method입니다.");
+		}
+	}
+}
+
+string Rest::GetHttpResponse(Response_Status rStatus, const string& content)
+{
+	if (rStatus == Response_Status::E_SUCCESSFUL)
+	{
+		return RESPONSE_STATUS_SUCCESSFUL + to_string(content.length()) + RESPONSE_CONTENT_TYPE + content;
+	}
+
+	return RESPONSE_STATUS_FAILED + to_string(content.length()) + RESPONSE_CONTENT_TYPE + content;
+}
+
 
 // namespace Logic Definition
 void Logic::BroadcastToClients(const string& message)
@@ -948,6 +1156,11 @@ string Logic::ProcessAttack(const shared_ptr<Client>& client, const ParamsForPro
 			// 공격 메시지를 브로드캐스트한다.
 			string msg = Json::GetUserAttackSlimeJson(client->ID, (*it)->index, userStr);
 			BroadcastToClients(msg);
+
+			if (client->restful.isRestful)
+			{
+				ret = msg;
+			}
 
 			// 유저의 공격으로 슬라임이 죽었으면 삭제를 위해 deadSlimes 리스트에 넣는다.
 			if ((*it)->OnAttack(client) <= 0)
